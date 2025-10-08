@@ -717,7 +717,7 @@ void mainTask(void *argument)
 		ADC_swap(&values);
 		SimpleFilter(&values);
 
-		Send_CAN_Msg(CANBUS_ID_1, 8, &values.u8[0]); // Sends ADC data vol1
+		Send_CAN_Msg(CANBUS_ID_1, 8, &values.u8[0]); // Sends ADC data vol1 s
 		Send_CAN_Msg(CANBUS_ID_2, 8, &values.u8[8]); // Sends ADC data vol2
 
 		osDelay(pdMS_TO_TICKS(10));
