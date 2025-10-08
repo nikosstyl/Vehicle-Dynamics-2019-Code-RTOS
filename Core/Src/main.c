@@ -55,6 +55,8 @@ typedef union{
 #define GYRO_DATA_RATE ASM330LHH_GY_ODR_1667Hz	/* 6.6 kHz gyroscope data rate */
 #define IMU_SAMPLES_NUM 3
 
+#define EVENT_CAN_TX_DONE 0x1
+
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -78,11 +80,28 @@ const osThreadAttr_t main_attributes = {
   .stack_size = 128 * 4,
   .priority = (osPriority_t) osPriorityNormal,
 };
+/* Definitions for adcDataSemaphore */
+osSemaphoreId_t adcDataSemaphoreHandle;
+const osSemaphoreAttr_t adcDataSemaphore_attributes = {
+  .name = "adcDataSemaphore"
+};
+/* Definitions for canTxSemaphore */
+osSemaphoreId_t canTxSemaphoreHandle;
+const osSemaphoreAttr_t canTxSemaphore_attributes = {
+  .name = "canTxSemaphore"
+};
 /* USER CODE BEGIN PV */
 
 /* Callback function for ADC conversion */
 void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc);
 
+/* Callback functions for CAN TX */
+void HAL_CAN_TxMailbox0CompleteCallback(CAN_HandleTypeDef *hcan);
+void HAL_CAN_TxMailbox1CompleteCallback(CAN_HandleTypeDef *hcan);
+void HAL_CAN_TxMailbox2CompleteCallback(CAN_HandleTypeDef *hcan);
+void HAL_CAN_TxMailbox0AbortCallback(CAN_HandleTypeDef *hcan);
+void HAL_CAN_TxMailbox1AbortCallback(CAN_HandleTypeDef *hcan);
+void HAL_CAN_TxMailbox2AbortCallback(CAN_HandleTypeDef *hcan);
 /* Swaps the ADC signals to their correct positions. */
 void ADC_swap(ADC_Samples_t *ret);
 
@@ -158,16 +177,16 @@ int main(void)
   MX_I2C1_Init();
   /* USER CODE BEGIN 2 */
 
-	stmdev_ctx_t dev_ctx;
-	int i=0;
-	int j=0;
-	uint8_t  reg;								/* --------------------------------- */
-	axis3bit16_t data_raw_acceleration={0};		/* --------------------------------- */
-	axis3bit16_t data_raw_angular_rate={0};		/* Those variables are neccesary for */
-	uint8_t whoamI, rst;						/* reading data from IMU */
-	axis3bit16_t acceleration_mg={0};
-	axis3bit16_t angular_rate_mdps={0};
-	double temp_acc[AXIS_NUM]={0}, temp_gyro[AXIS_NUM]={0};
+	// stmdev_ctx_t dev_ctx;
+	// int i=0;
+	// int j=0;
+	// uint8_t  reg;								/* --------------------------------- */
+	// axis3bit16_t data_raw_acceleration={0};		/* --------------------------------- */
+	// axis3bit16_t data_raw_angular_rate={0};		/* Those variables are neccesary for */
+	// uint8_t whoamI, rst;						/* reading data from IMU */
+	// axis3bit16_t acceleration_mg={0};
+	// axis3bit16_t angular_rate_mdps={0};
+	// double temp_acc[AXIS_NUM]={0}, temp_gyro[AXIS_NUM]={0};
 
 	// dev_ctx.write_reg = platform_write;	/* --------------------------------------------------------- */
 	// dev_ctx.read_reg = platform_read;		/* Data for IMU. It was a pain to define, please don't touch */
@@ -201,6 +220,10 @@ int main(void)
 	if (HAL_CAN_Start(&hcan) != HAL_OK) {
 		Error_Handler();
 	}
+
+	if (HAL_CAN_ActivateNotification(&hcan, CAN_IT_TX_MAILBOX_EMPTY) != HAL_OK) {
+		Error_Handler();
+	}
   /* USER CODE END 2 */
 
   /* Init scheduler */
@@ -209,6 +232,13 @@ int main(void)
   /* USER CODE BEGIN RTOS_MUTEX */
   /* add mutexes, ... */
   /* USER CODE END RTOS_MUTEX */
+
+  /* Create the semaphores(s) */
+  /* creation of adcDataSemaphore */
+  adcDataSemaphoreHandle = osSemaphoreNew(1, 1, &adcDataSemaphore_attributes);
+
+  /* creation of canTxSemaphore */
+  canTxSemaphoreHandle = osSemaphoreNew(3, 3, &canTxSemaphore_attributes);
 
   /* USER CODE BEGIN RTOS_SEMAPHORES */
   /* add semaphores, ... */
@@ -606,7 +636,9 @@ static void MX_GPIO_Init(void)
 /* USER CODE BEGIN 4 */
 
 void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc) {
+	osSemaphoreAcquire(adcDataSemaphoreHandle, 0); // No timeout used since we're in ISR space.
 	Final_ADC_Values = ADC_Samples;
+	osSemaphoreRelease(adcDataSemaphoreHandle);
 }
 
 void ADC_swap(ADC_Samples_t *ret) {
@@ -626,30 +658,43 @@ HAL_StatusTypeDef Send_CAN_Msg(uint32_t id, uint32_t dlc, uint8_t aData[]) {
 	TxHeader.DLC = dlc;
 	TxHeader.IDE = CAN_ID_EXT;
 	TxHeader.RTR = CAN_RTR_DATA;
-	uint32_t mailbox_used = 4;
-	bool txmailbox_free = false;
+	uint32_t mailbox;
 	
-	for (int i=0;i<10;i++) {
-		if (HAL_CAN_GetTxMailboxesFreeLevel(&hcan) > 0) {
-			txmailbox_free = true;
-			break;
-		}
-		HAL_Delay(1);
+	if (osSemaphoreAcquire(canTxSemaphoreHandle, pdMS_TO_TICKS(10)) != osOK) {
+		return HAL_TIMEOUT;
 	}
-	if (!txmailbox_free) {
-		return HAL_ERROR;
-	}
-	
-	status = HAL_CAN_AddTxMessage(&hcan, &TxHeader, aData, &mailbox_used);
+
+	status = HAL_CAN_AddTxMessage(&hcan, &TxHeader, aData, &mailbox);
 	return status;
 }
 
+static inline void CAN_TX_Callback() {
+	osSemaphoreRelease(canTxSemaphoreHandle);
+}
+void HAL_CAN_TxMailbox0CompleteCallback(CAN_HandleTypeDef *hcan){
+	CAN_TX_Callback();
+}
+void HAL_CAN_TxMailbox1CompleteCallback(CAN_HandleTypeDef *hcan){
+	CAN_TX_Callback();
+}
+void HAL_CAN_TxMailbox2CompleteCallback(CAN_HandleTypeDef *hcan){
+	CAN_TX_Callback();
+}
+void HAL_CAN_TxMailbox0AbortCallback(CAN_HandleTypeDef *hcan){
+	CAN_TX_Callback();
+}
+void HAL_CAN_TxMailbox1AbortCallback(CAN_HandleTypeDef *hcan){
+	CAN_TX_Callback();
+}
+void HAL_CAN_TxMailbox2AbortCallback(CAN_HandleTypeDef *hcan){
+	CAN_TX_Callback();
+}
 
 /* USER CODE END 4 */
 
 /* USER CODE BEGIN Header_mainTask */
 /**
-  * @brief  Function implementing the main thread.
+  * @brief  Main function that sends data to the CAN Bus
   * @param  argument: Not used
   * @retval None
   */
@@ -657,11 +702,17 @@ HAL_StatusTypeDef Send_CAN_Msg(uint32_t id, uint32_t dlc, uint8_t aData[]) {
 void mainTask(void *argument)
 {
   /* USER CODE BEGIN 5 */
-  /* Infinite loop */
-  for(;;)
-  {
-    osDelay(1);
-  }
+	while (1) {
+		ADC_Samples_t values = {0};
+		osSemaphoreAcquire(adcDataSemaphoreHandle, pdMS_TO_TICKS(1));
+		ADC_swap(&values);
+		osSemaphoreRelease(adcDataSemaphoreHandle);
+
+		Send_CAN_Msg(CANBUS_ID_1, 8, &values.u8[0]);
+		Send_CAN_Msg(CANBUS_ID_2, 8, &values.u8[8]);
+
+		osDelay(pdMS_TO_TICKS(10));
+	}
   /* USER CODE END 5 */
 }
 
