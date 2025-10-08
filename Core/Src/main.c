@@ -71,6 +71,8 @@ DMA_HandleTypeDef hdma_adc1;
 CAN_HandleTypeDef hcan;
 
 I2C_HandleTypeDef hi2c1;
+DMA_HandleTypeDef hdma_i2c1_tx;
+DMA_HandleTypeDef hdma_i2c1_rx;
 
 /* Definitions for main */
 osThreadId_t mainHandle;
@@ -83,6 +85,16 @@ const osThreadAttr_t main_attributes = {
 osSemaphoreId_t adcDataSemaphoreHandle;
 const osSemaphoreAttr_t adcDataSemaphore_attributes = {
   .name = "adcDataSemaphore"
+};
+/* Definitions for i2cTxSemaphore */
+osSemaphoreId_t i2cTxSemaphoreHandle;
+const osSemaphoreAttr_t i2cTxSemaphore_attributes = {
+  .name = "i2cTxSemaphore"
+};
+/* Definitions for i2cRxSemaphore */
+osSemaphoreId_t i2cRxSemaphoreHandle;
+const osSemaphoreAttr_t i2cRxSemaphore_attributes = {
+  .name = "i2cRxSemaphore"
 };
 /* Definitions for canTxSemaphore */
 osSemaphoreId_t canTxSemaphoreHandle;
@@ -127,6 +139,11 @@ static int32_t platform_write(void *handle, uint8_t reg, const uint8_t *bufp, ui
 static int32_t platform_read(void *handle, uint8_t reg, uint8_t *bufp, uint16_t len);
 
 void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc);
+
+void HAL_I2C_MemTxCpltCallback(I2C_HandleTypeDef *hi2c);
+void HAL_I2C_MemRxCpltCallback(I2C_HandleTypeDef *hi2c);
+void HAL_I2C_ErrorCallback(I2C_HandleTypeDef *hi2c);
+
 HAL_StatusTypeDef Send_CAN_Msg(uint32_t id, uint32_t dlc, uint8_t aData[]);
 void ADC_swap(ADC_Samples_t *ret);
 
@@ -222,6 +239,12 @@ int main(void)
   /* Create the semaphores(s) */
   /* creation of adcDataSemaphore */
   adcDataSemaphoreHandle = osSemaphoreNew(1, 1, &adcDataSemaphore_attributes);
+
+  /* creation of i2cTxSemaphore */
+  i2cTxSemaphoreHandle = osSemaphoreNew(1, 1, &i2cTxSemaphore_attributes);
+
+  /* creation of i2cRxSemaphore */
+  i2cRxSemaphoreHandle = osSemaphoreNew(1, 1, &i2cRxSemaphore_attributes);
 
   /* creation of canTxSemaphore */
   canTxSemaphoreHandle = osSemaphoreNew(3, 3, &canTxSemaphore_attributes);
@@ -595,6 +618,12 @@ static void MX_DMA_Init(void)
   /* DMA1_Channel1_IRQn interrupt configuration */
   HAL_NVIC_SetPriority(DMA1_Channel1_IRQn, 5, 0);
   HAL_NVIC_EnableIRQ(DMA1_Channel1_IRQn);
+  /* DMA1_Channel2_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA1_Channel2_IRQn, 5, 0);
+  HAL_NVIC_EnableIRQ(DMA1_Channel2_IRQn);
+  /* DMA1_Channel3_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA1_Channel3_IRQn, 5, 0);
+  HAL_NVIC_EnableIRQ(DMA1_Channel3_IRQn);
 
 }
 
@@ -694,7 +723,8 @@ void SimpleFilter(ADC_Samples_t *values) {
 */
 static int32_t platform_write(void *handle, uint8_t reg, const uint8_t *bufp, uint16_t len)
 {
-	return(HAL_I2C_Mem_Write(&hi2c1, ASM330LHH_I2C_ADD_H, reg, I2C_MEMADD_SIZE_8BIT, (uint8_t*) bufp, len, 1));
+	osSemaphoreAcquire(i2cTxSemaphoreHandle, osWaitForever);
+	return(HAL_I2C_Mem_Write_DMA(&hi2c1, ASM330LHH_I2C_ADD_H, reg, I2C_MEMADD_SIZE_8BIT, (uint8_t*) bufp, len));
 
 }
 
@@ -709,7 +739,8 @@ static int32_t platform_write(void *handle, uint8_t reg, const uint8_t *bufp, ui
  */
 static int32_t platform_read(void *handle, uint8_t reg, uint8_t *bufp, uint16_t len)
 {
-	return(HAL_I2C_Mem_Read(&hi2c1, ASM330LHH_I2C_ADD_H, reg, I2C_MEMADD_SIZE_8BIT, (uint8_t*) bufp, len, 1));
+	osSemaphoreAcquire(i2cRxSemaphoreHandle, osWaitForever);
+	return(HAL_I2C_Mem_Read_DMA(&hi2c1, ASM330LHH_I2C_ADD_H, reg, I2C_MEMADD_SIZE_8BIT, (uint8_t*) bufp, len));
 
 }
 
@@ -737,6 +768,16 @@ void readFromIMU(stmdev_ctx_t *dev_ctx, axis3bit16_t *accel, axis3bit16_t *gyro)
 		accel->i16[i] = asm330lhh_from_fs4g_to_mg(accel->i16[i]);
 		gyro->i16[i] = asm330lhh_from_fs2000dps_to_mdps(gyro->i16[i]);
 	}
+}
+
+void HAL_I2C_MemTxCpltCallback(I2C_HandleTypeDef *hi2c){
+	osSemaphoreRelease(i2cTxSemaphoreHandle);
+}
+void HAL_I2C_MemRxCpltCallback(I2C_HandleTypeDef *hi2c) {
+	osSemaphoreRelease(i2cRxSemaphoreHandle);
+}
+void HAL_I2C_ErrorCallback(I2C_HandleTypeDef *hi2c) {
+	Error_Handler();
 }
 
 /* USER CODE END 4 */

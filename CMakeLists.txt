@@ -78,7 +78,7 @@ set(CANBUS_ID_1 0x34)
 set(CANBUS_ID_2 0x35)
 set(CANBUS_ID_3 0x36)
 set(CANBUS_ID_4 0x37)
-set(IS_COG 1)
+set(IS_COG 0)
 
 if (NOT DEFINED IS_COG)
 	message(FATAL_ERROR "IS_COG is not defined. Please define it using -DIS_COG=<value>")
