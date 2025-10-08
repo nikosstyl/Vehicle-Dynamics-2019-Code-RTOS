@@ -35,15 +35,15 @@ jobs:
           mkdir -p release
 
           for IDS in "${VARIANTS[@]}"; do
-            read CAN1 CAN2 <<< $IDS
-            BUILD_DIR=build_${CAN1}_${CAN2}
-            echo "Building variant CANBUS_ID_1=$CAN1 CANBUS_ID_2=$CAN2"
+            read CAN1_ID CAN2_ID <<< $IDS
+            BUILD_DIR=build_${CAN1_ID}_${CAN2_ID}
+            echo "Building variant CANBUS_ID_1=$CAN1_ID CANBUS_ID_2=$CAN2_ID"
 
             # Configure
             cmake -B $BUILD_DIR \
               -DCMAKE_TOOLCHAIN_FILE=cmake/gcc-arm-none-eabi.cmake \
-              -DCANBUS_ID_1=$CAN1 \
-              -DCANBUS_ID_2=$CAN2 \
+              -DCANBUS_ID_1=$CAN1_ID \
+              -DCANBUS_ID_2=$CAN2_ID \
               -G Ninja
 
             # Build
@@ -52,7 +52,7 @@ jobs:
             # Find ELF
             ELF_FILE=$(find $BUILD_DIR -maxdepth 1 -type f -name "*.elf")
             ELF_FILE_NO_EXT="${ELF_FILE%.*}"
-            NEW_ELF="release/$(basename $ELF_FILE_NO_EXT)-$CAN1_$CAN2-$TAG_NAME-$(date +%s).elf"
+            NEW_ELF="release/$(basename $ELF_FILE_NO_EXT)-${CAN1_ID}-${CAN2_ID}-$TAG_NAME-$(date +%s).elf"
             cp "$ELF_FILE" "$NEW_ELF"
             echo "Packaged ELF: $NEW_ELF"
           done
