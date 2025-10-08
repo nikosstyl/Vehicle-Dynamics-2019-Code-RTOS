@@ -1,4 +1,11 @@
 #pragma once
 
+#define IS_COG @IS_COG@
+
 #define CANBUS_ID_1 @CANBUS_ID_1@
 #define CANBUS_ID_2 @CANBUS_ID_2@
+
+#if IS_COG==1
+#define CANBUS_ID_3 @CANBUS_ID_3@
+#define CANBUS_ID_4 @CANBUS_ID_4@
+#endif

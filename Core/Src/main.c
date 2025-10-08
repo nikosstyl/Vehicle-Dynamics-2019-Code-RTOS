@@ -178,21 +178,6 @@ int main(void)
   MX_I2C1_Init();
   /* USER CODE BEGIN 2 */
 
-	// stmdev_ctx_t dev_ctx;
-	// int i=0;
-	// int j=0;
-	// uint8_t  reg;								/* --------------------------------- */
-	// axis3bit16_t data_raw_acceleration={0};		/* --------------------------------- */
-	// axis3bit16_t data_raw_angular_rate={0};		/* Those variables are neccesary for */
-	// uint8_t whoamI, rst;						/* reading data from IMU */
-	// axis3bit16_t acceleration_mg={0};
-	// axis3bit16_t angular_rate_mdps={0};
-	// double temp_acc[AXIS_NUM]={0}, temp_gyro[AXIS_NUM]={0};
-
-	// dev_ctx.write_reg = platform_write;	/* --------------------------------------------------------- */
-	// dev_ctx.read_reg = platform_read;		/* Data for IMU. It was a pain to define, please don't touch */
-	// dev_ctx.handle = &SENSOR_BUS;
-
 	uint8_t retries = 0;
 	while (retries < 4) {
 		if (HAL_ADCEx_Calibration_Start(&hadc1, ADC_SINGLE_ENDED) != HAL_OK) {
@@ -698,6 +683,62 @@ void SimpleFilter(ADC_Samples_t *values) {
 	}
 }
 
+/*
+ * @brief  Write generic device register (platform dependent)
+ *
+ * @param  handle    customizable argument. In this examples is used in
+ *                   order to select the correct sensor bus handler.
+ * @param  reg       register to write
+ * @param  bufp      pointer to data to write in register reg
+ * @param  len       number of consecutive register to write
+*/
+static int32_t platform_write(void *handle, uint8_t reg, const uint8_t *bufp, uint16_t len)
+{
+	return(HAL_I2C_Mem_Write(&hi2c1, ASM330LHH_I2C_ADD_H, reg, I2C_MEMADD_SIZE_8BIT, (uint8_t*) bufp, len, 1));
+
+}
+
+/*
+ * @brief  Read generic device register (platform dependent)
+ *
+ * @param  handle    customizable argument. In this examples is used in
+ *                   order to select the correct sensor bus handler.
+ * @param  reg       register to read
+ * @param  bufp      pointer to buffer that store the data read
+ * @param  len       number of consecutive register to read
+ */
+static int32_t platform_read(void *handle, uint8_t reg, uint8_t *bufp, uint16_t len)
+{
+	return(HAL_I2C_Mem_Read(&hi2c1, ASM330LHH_I2C_ADD_H, reg, I2C_MEMADD_SIZE_8BIT, (uint8_t*) bufp, len, 1));
+
+}
+
+void initializeIMU(stmdev_ctx_t *dev_ctx) {
+	asm330lhh_device_conf_set(dev_ctx, PROPERTY_ENABLE);			/* Start device configuration */
+	asm330lhh_block_data_update_set(dev_ctx, PROPERTY_ENABLE);	/* Enable Block Data Update */
+	asm330lhh_xl_data_rate_set(dev_ctx, ACCEL_DATA_RATE);	/* Set Accelerometer Output Data Rate */
+	asm330lhh_gy_data_rate_set(dev_ctx, GYRO_DATA_RATE);	/* Set Gyroscope Output Data Rate */
+	asm330lhh_xl_full_scale_set(dev_ctx, ASM330LHH_4g);			 /* Set 4G full scale for accelerometer. */
+	asm330lhh_gy_full_scale_set(dev_ctx, ASM330LHH_2000dps);	/* Set 2000 dps full scale for gyroscope. */
+	asm330lhh_xl_hp_path_on_out_set(dev_ctx, ASM330LHH_LP_ODR_DIV_100);	/* Configure filtering chain(No aux interface) */
+	asm330lhh_xl_filter_lp2_set(dev_ctx, PROPERTY_ENABLE);				/*  Accelerometer - LPF1 + LPF2 path */
+}
+
+void readFromIMU(stmdev_ctx_t *dev_ctx, axis3bit16_t *accel, axis3bit16_t *gyro) {
+	uint8_t reg;
+	asm330lhh_xl_flag_data_ready_get(dev_ctx, &reg);
+	if (!reg) {
+		return;
+	}
+	asm330lhh_acceleration_raw_get(dev_ctx, accel->i16);
+	asm330lhh_angular_rate_raw_get(dev_ctx, gyro->i16);
+
+	for (int i = 0; i < AXIS_NUM; i++) {
+		accel->i16[i] = asm330lhh_from_fs4g_to_mg(accel->i16[i]);
+		gyro->i16[i] = asm330lhh_from_fs2000dps_to_mdps(gyro->i16[i]);
+	}
+}
+
 /* USER CODE END 4 */
 
 /* USER CODE BEGIN Header_mainTask */
@@ -710,6 +751,16 @@ void SimpleFilter(ADC_Samples_t *values) {
 void mainTask(void *argument)
 {
   /* USER CODE BEGIN 5 */
+
+	#if IS_COG==1
+	stmdev_ctx_t dev_ctx;
+	dev_ctx.write_reg = platform_write;	/* Define the write function for the IMU library. */
+	dev_ctx.read_reg = platform_read; /* Define the read function for the IMU library. */
+	dev_ctx.handle = &SENSOR_BUS;
+
+	initializeIMU(&dev_ctx);
+	#endif
+
 	while (1) {
 		ADC_Samples_t values = {0};
 		osSemaphoreAcquire(adcDataSemaphoreHandle, pdMS_TO_TICKS(1));
@@ -717,8 +768,19 @@ void mainTask(void *argument)
 		ADC_swap(&values);
 		SimpleFilter(&values);
 
-		Send_CAN_Msg(CANBUS_ID_1, 8, &values.u8[0]); // Sends ADC data vol1 s
+		#if IS_COG==0
+		Send_CAN_Msg(CANBUS_ID_1, 8, &values.u8[0]); // Sends ADC data vol1
 		Send_CAN_Msg(CANBUS_ID_2, 8, &values.u8[8]); // Sends ADC data vol2
+		#endif
+		#if IS_COG==1
+		axis3bit16_t accel, gyro;
+		readFromIMU(&dev_ctx, &accel, &gyro);
+
+		Send_CAN_Msg(CANBUS_ID_1, 8, &accel.u8[0]); // Sends accel data
+		Send_CAN_Msg(CANBUS_ID_2, 8, &gyro.u8[0]); // Sends gyro data
+		Send_CAN_Msg(CANBUS_ID_3, 8, &values.u8[0]); // Sends ADC data vol1
+		Send_CAN_Msg(CANBUS_ID_4, 8, &values.u8[8]); // Sends ADC data vol2
+		#endif
 
 		osDelay(pdMS_TO_TICKS(10));
 	}

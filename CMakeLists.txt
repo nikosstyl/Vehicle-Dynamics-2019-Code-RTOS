@@ -71,11 +71,40 @@ target_link_libraries(${CMAKE_PROJECT_NAME}
     # Add user defined libraries
 )
 
-set(CANBUS_ID_1 0x34) # Alternative 0x36
-set(CANBUS_ID_2 0x35) # Alternative 0x37
+# Add variables for configuration
+# These can be overridden from command line using -D<VAR>=<value>
+# Example: cmake -DCANBUS_ID_1=0x34 -DCANBUS_ID_2=0x35 -DIS_COG=1 ..
+set(CANBUS_ID_1 0x34)
+set(CANBUS_ID_2 0x35)
+set(CANBUS_ID_3 0x36)
+set(CANBUS_ID_4 0x37)
+set(IS_COG 1)
+
+if (NOT DEFINED IS_COG)
+	message(FATAL_ERROR "IS_COG is not defined. Please define it using -DIS_COG=<value>")
+endif()
+if (NOT DEFINED CANBUS_ID_1)
+	message(FATAL_ERROR "CANBUS_ID_1 is not defined. Please define it using -DCANBUS_ID_1=<value>")
+endif()
+if (NOT DEFINED CANBUS_ID_2)
+	message(FATAL_ERROR "CANBUS_ID_2 is not defined. Please define it using -DCANBUS_ID_2=<value>")
+endif()
+if(IS_COG)
+	message(STATUS "Building COG variant")
+	if (NOT DEFINED CANBUS_ID_3)
+		message(FATAL_ERROR "CANBUS_ID_3 is not defined. Please define it using -DCANBUS_ID_3=<value>")
+	endif()
+	if (NOT DEFINED CANBUS_ID_4)
+		message(FATAL_ERROR "CANBUS_ID_4 is not defined. Please define it using -DCANBUS_ID_4=<value>")
+	endif()
+endif(IS_COG)
 
 message(STATUS "CANBUS_ID_1 = ${CANBUS_ID_1}")
 message(STATUS "CANBUS_ID_2 = ${CANBUS_ID_2}")
+if(IS_COG)
+	message(STATUS "CANBUS_ID_3 = ${CANBUS_ID_3}")
+	message(STATUS "CANBUS_ID_4 = ${CANBUS_ID_4}")
+endif(IS_COG)
 
 configure_file(
     ${CMAKE_SOURCE_DIR}/Core/Inc/config.h.in
