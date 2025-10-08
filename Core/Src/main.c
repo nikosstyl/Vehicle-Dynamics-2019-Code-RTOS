@@ -50,7 +50,6 @@ typedef union{
 
 #define AXIS_NUM 3 /* 3-Axis measurement*/
 #define SENSOR_BUS hi2c1
-#define BOOT_TIME 10000 /* 10 s */
 #define ACCEL_DATA_RATE ASM330LHH_XL_ODR_1667Hz	/* 6.6 kHz accelerometer data rate */
 #define GYRO_DATA_RATE ASM330LHH_GY_ODR_1667Hz	/* 6.6 kHz gyroscope data rate */
 #define IMU_SAMPLES_NUM 3
@@ -107,6 +106,8 @@ void ADC_swap(ADC_Samples_t *ret);
 
 /* Function that sends data over CAN Bus CORRECTLY */
 HAL_StatusTypeDef Send_CAN_Msg(uint32_t id, uint32_t dlc, uint8_t aData[]);
+
+void SimpleFilter(ADC_Samples_t *values);
 
 /* USER CODE END PV */
 
@@ -636,8 +637,6 @@ static void MX_GPIO_Init(void)
 /* USER CODE BEGIN 4 */
 
 void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc) {
-	osSemaphoreAcquire(adcDataSemaphoreHandle, 0); // No timeout used since we're in ISR space.
-	Final_ADC_Values = ADC_Samples;
 	osSemaphoreRelease(adcDataSemaphoreHandle);
 }
 
@@ -690,6 +689,15 @@ void HAL_CAN_TxMailbox2AbortCallback(CAN_HandleTypeDef *hcan){
 	CAN_TX_Callback();
 }
 
+void SimpleFilter(ADC_Samples_t *values) {
+	for (uint8_t i = 0; i < 8; i++) {
+		static float filtered[8] = {0};
+		const float alpha = 0.1f;
+		filtered[i] += alpha * ((float)values->i16[i] - filtered[i]);
+		values->i16[i] = (int16_t)filtered[i];
+	}
+}
+
 /* USER CODE END 4 */
 
 /* USER CODE BEGIN Header_mainTask */
@@ -705,11 +713,12 @@ void mainTask(void *argument)
 	while (1) {
 		ADC_Samples_t values = {0};
 		osSemaphoreAcquire(adcDataSemaphoreHandle, pdMS_TO_TICKS(1));
+		Final_ADC_Values = ADC_Samples;
 		ADC_swap(&values);
-		osSemaphoreRelease(adcDataSemaphoreHandle);
+		SimpleFilter(&values);
 
-		Send_CAN_Msg(CANBUS_ID_1, 8, &values.u8[0]);
-		Send_CAN_Msg(CANBUS_ID_2, 8, &values.u8[8]);
+		Send_CAN_Msg(CANBUS_ID_1, 8, &values.u8[0]); // Sends ADC data vol1
+		Send_CAN_Msg(CANBUS_ID_2, 8, &values.u8[8]); // Sends ADC data vol2
 
 		osDelay(pdMS_TO_TICKS(10));
 	}
