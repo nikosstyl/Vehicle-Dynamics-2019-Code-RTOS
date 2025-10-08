@@ -21,16 +21,38 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include "stdio.h"
+#include "stdbool.h"
+#include "asm330lhh_reg.h"
+#include "config.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
 
+/* Union used in driver of the IMU. */
+typedef union{
+	int16_t i16[3];
+	uint8_t u8[6];
+}axis3bit16_t;
+
+/* Union used when converting ADC values. */
+typedef union{
+	int16_t i16[8];
+	uint8_t u8[16];
+}ADC_Samples_t;
+
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
+
+#define AXIS_NUM 3 /* 3-Axis measurement*/
+#define SENSOR_BUS hi2c1
+#define BOOT_TIME 10000 /* 10 s */
+#define ACCEL_DATA_RATE ASM330LHH_XL_ODR_1667Hz	/* 6.6 kHz accelerometer data rate */
+#define GYRO_DATA_RATE ASM330LHH_GY_ODR_1667Hz	/* 6.6 kHz gyroscope data rate */
+#define IMU_SAMPLES_NUM 3
 
 /* USER CODE END PD */
 
@@ -50,6 +72,15 @@ I2C_HandleTypeDef hi2c1;
 
 /* USER CODE BEGIN PV */
 
+/* Callback function for ADC conversion */
+void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc);
+
+/* Swaps the ADC signals to their correct positions. */
+void ADC_swap(ADC_Samples_t *ret);
+
+/* Function that sends data over CAN Bus CORRECTLY */
+HAL_StatusTypeDef Send_CAN_Msg(uint32_t id, uint32_t dlc, uint8_t aData[]);
+
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -62,10 +93,22 @@ static void MX_CAN_Init(void);
 static void MX_I2C1_Init(void);
 /* USER CODE BEGIN PFP */
 
+static int32_t platform_write(void *handle, uint8_t reg, const uint8_t *bufp, uint16_t len);
+static int32_t platform_read(void *handle, uint8_t reg, uint8_t *bufp, uint16_t len);
+
+void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc);
+HAL_StatusTypeDef Send_CAN_Msg(uint32_t id, uint32_t dlc, uint8_t aData[]);
+void ADC_swap(ADC_Samples_t *ret);
+
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+
+CAN_TxHeaderTypeDef TxHeader;	/* CAN Header */
+uint32_t mailbox;				/* CAN Bus mailbox */
+ADC_Samples_t ADC_Samples={0}, Final_ADC_Values={0};		/* ADC Data */
+
 
 /* USER CODE END 0 */
 
@@ -105,16 +148,65 @@ int main(void)
   MX_I2C1_Init();
   /* USER CODE BEGIN 2 */
 
+	stmdev_ctx_t dev_ctx;
+	int i=0;
+	int j=0;
+	uint8_t  reg;								/* --------------------------------- */
+	axis3bit16_t data_raw_acceleration={0};		/* --------------------------------- */
+	axis3bit16_t data_raw_angular_rate={0};		/* Those variables are neccesary for */
+	uint8_t whoamI, rst;						/* reading data from IMU */
+	axis3bit16_t acceleration_mg={0};
+	axis3bit16_t angular_rate_mdps={0};
+	double temp_acc[AXIS_NUM]={0}, temp_gyro[AXIS_NUM]={0};
+
+	// dev_ctx.write_reg = platform_write;	/* --------------------------------------------------------- */
+	// dev_ctx.read_reg = platform_read;		/* Data for IMU. It was a pain to define, please don't touch */
+	// dev_ctx.handle = &SENSOR_BUS;
+
+	uint8_t retries = 0;
+	while (retries < 4) {
+		if (HAL_ADCEx_Calibration_Start(&hadc1, ADC_SINGLE_ENDED) != HAL_OK) {
+			retries++;
+		}
+		else {
+			break;
+		}
+		if (HAL_ADCEx_Calibration_Start(&hadc2, ADC_SINGLE_ENDED) != HAL_OK) {
+			retries++;
+		}
+		else {
+			break;
+		}
+	}
+
+	HAL_StatusTypeDef status = HAL_ADC_Start(&hadc2);
+	if (status != HAL_OK) {
+		Error_Handler();
+	}
+	status = HAL_ADCEx_MultiModeStart_DMA(&hadc1, (uint32_t *)ADC_Samples.i16, 8);
+	if (status != HAL_OK) {
+		Error_Handler();
+	}
+
+	if (HAL_CAN_Start(&hcan) != HAL_OK) {
+		Error_Handler();
+	}
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
-  while (1)
-  {
+	while (1) {
+	ADC_Samples_t tmp;
+	ADC_swap(&tmp);
+
+	Send_CAN_Msg(CANBUS_ID_1, 8, &tmp.u8[0]);
+	Send_CAN_Msg(CANBUS_ID_2, 8, &tmp.u8[8]);
+	HAL_Delay(10);
+
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-  }
+	}
   /* USER CODE END 3 */
 }
 
@@ -467,6 +559,46 @@ static void MX_GPIO_Init(void)
 
 /* USER CODE BEGIN 4 */
 
+void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc) {
+	Final_ADC_Values = ADC_Samples;
+}
+
+void ADC_swap(ADC_Samples_t *ret) {
+	ret->i16[0] = Final_ADC_Values.i16[0];
+	ret->i16[1] = Final_ADC_Values.i16[2];
+	ret->i16[2] = Final_ADC_Values.i16[1];
+	ret->i16[3] = Final_ADC_Values.i16[3];
+	ret->i16[4] = Final_ADC_Values.i16[5];
+	ret->i16[5] = Final_ADC_Values.i16[7];
+	ret->i16[6] = Final_ADC_Values.i16[4];
+	ret->i16[7] = Final_ADC_Values.i16[6];
+}
+
+HAL_StatusTypeDef Send_CAN_Msg(uint32_t id, uint32_t dlc, uint8_t aData[]) {
+	HAL_StatusTypeDef status;
+	TxHeader.ExtId = id;
+	TxHeader.DLC = dlc;
+	TxHeader.IDE = CAN_ID_EXT;
+	TxHeader.RTR = CAN_RTR_DATA;
+	uint32_t mailbox_used = 4;
+	bool txmailbox_free = false;
+	
+	for (int i=0;i<10;i++) {
+		if (HAL_CAN_GetTxMailboxesFreeLevel(&hcan) > 0) {
+			txmailbox_free = true;
+			break;
+		}
+		HAL_Delay(1);
+	}
+	if (!txmailbox_free) {
+		return HAL_ERROR;
+	}
+	
+	status = HAL_CAN_AddTxMessage(&hcan, &TxHeader, aData, &mailbox_used);
+	return status;
+}
+
+
 /* USER CODE END 4 */
 
 /**
@@ -477,9 +609,10 @@ void Error_Handler(void)
 {
   /* USER CODE BEGIN Error_Handler_Debug */
   /* User can add his own implementation to report the HAL error return state */
-  __disable_irq();
+  HAL_Delay(5);
   while (1)
   {
+	NVIC_SystemReset();
   }
   /* USER CODE END Error_Handler_Debug */
 }

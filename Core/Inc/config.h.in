@@ -1,0 +1,4 @@
+#pragma once
+
+#define CANBUS_ID_1 @CANBUS_ID_1@
+#define CANBUS_ID_2 @CANBUS_ID_2@

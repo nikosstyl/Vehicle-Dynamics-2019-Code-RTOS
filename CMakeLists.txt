@@ -40,16 +40,20 @@ add_subdirectory(cmake/stm32cubemx)
 # Link directories setup
 target_link_directories(${CMAKE_PROJECT_NAME} PRIVATE
     # Add user defined library search paths
+	${CMAKE_SOURCE_DIR}/Core/Inc/
 )
 
 # Add sources to executable
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     # Add user sources here
+	Core/Inc/asm330lhh_reg.h
+	Core/Src/asm330lhh_reg.c
 )
 
 # Add include paths
 target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
     # Add user defined include paths
+	${CMAKE_CURRENT_BINARY_DIR}
 )
 
 # Add project symbols (macros)
@@ -65,4 +69,16 @@ target_link_libraries(${CMAKE_PROJECT_NAME}
     stm32cubemx
 
     # Add user defined libraries
+)
+
+set(CANBUS_ID_1 0x34) # Alternative 0x36
+set(CANBUS_ID_2 0x35) # Alternative 0x37
+
+message(STATUS "CANBUS_ID_1 = ${CANBUS_ID_1}")
+message(STATUS "CANBUS_ID_2 = ${CANBUS_ID_2}")
+
+configure_file(
+    ${CMAKE_SOURCE_DIR}/Core/Inc/config.h.in
+    ${CMAKE_CURRENT_BINARY_DIR}/config.h
+	@ONLY
 )
