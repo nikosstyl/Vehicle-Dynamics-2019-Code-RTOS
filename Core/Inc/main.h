@@ -37,6 +37,42 @@ extern "C" {
 /* Exported types ------------------------------------------------------------*/
 /* USER CODE BEGIN ET */
 
+/* Union used in driver of the IMU. */
+typedef union{
+	int16_t i16[3]; // 0:x, 1:y, 2:z
+	uint8_t u8[6];
+}axis3bit16_t;
+
+/* Union used when converting ADC values. */
+typedef union{
+	int16_t i16[8];
+	uint8_t u8[16];
+}ADC_Samples_t;
+
+typedef struct _canBusConfig {
+	int16_t multiplier;
+	int16_t divider;
+	int16_t offset;
+	uint8_t index;
+}canBusConfig_t;
+
+enum POSITION_INDEX {
+	POS_ADC_CHANNEL_1 = 0,
+	POS_ADC_CHANNEL_2,
+	POS_ADC_CHANNEL_3,
+	POS_ADC_CHANNEL_4,
+	POS_ADC_CHANNEL_5,
+	POS_ADC_CHANNEL_6,
+	POS_ADC_CHANNEL_7,
+	POS_ADC_CHANNEL_8,
+	POS_IMU_ACCEL_X,
+	POS_IMU_ACCEL_Y,
+	POS_IMU_ACCEL_Z,
+	POS_IMU_GYRO_X,
+	POS_IMU_GYRO_Y,
+	POS_IMU_GYRO_Z
+};
+
 /* USER CODE END ET */
 
 /* Exported constants --------------------------------------------------------*/
@@ -59,6 +95,10 @@ void Error_Handler(void);
 /* Private defines -----------------------------------------------------------*/
 
 /* USER CODE BEGIN Private defines */
+
+#define ADC_CHANNELS_NUM 8
+#define IMU_CHANNELS_NUM 6
+#define TOTAL_CHANNELS_NUM (ADC_CHANNELS_NUM + IMU_CHANNELS_NUM)
 
 /* USER CODE END Private defines */
 

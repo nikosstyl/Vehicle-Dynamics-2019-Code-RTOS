@@ -31,17 +31,6 @@
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
 
-/* Union used in driver of the IMU. */
-typedef union{
-	int16_t i16[3];
-	uint8_t u8[6];
-}axis3bit16_t;
-
-/* Union used when converting ADC values. */
-typedef union{
-	int16_t i16[8];
-	uint8_t u8[16];
-}ADC_Samples_t;
 
 /* USER CODE END PTD */
 
@@ -81,6 +70,18 @@ const osThreadAttr_t main_attributes = {
   .stack_size = 128 * 4,
   .priority = (osPriority_t) osPriorityNormal,
 };
+/* Definitions for setParameters */
+osThreadId_t setParametersHandle;
+const osThreadAttr_t setParameters_attributes = {
+  .name = "setParameters",
+  .stack_size = 128 * 4,
+  .priority = (osPriority_t) osPriorityBelowNormal,
+};
+/* Definitions for rxParamQueue */
+osMessageQueueId_t rxParamQueueHandle;
+const osMessageQueueAttr_t rxParamQueue_attributes = {
+  .name = "rxParamQueue"
+};
 /* Definitions for adcDataSemaphore */
 osSemaphoreId_t adcDataSemaphoreHandle;
 const osSemaphoreAttr_t adcDataSemaphore_attributes = {
@@ -113,11 +114,15 @@ void HAL_CAN_TxMailbox2CompleteCallback(CAN_HandleTypeDef *hcan);
 void HAL_CAN_TxMailbox0AbortCallback(CAN_HandleTypeDef *hcan);
 void HAL_CAN_TxMailbox1AbortCallback(CAN_HandleTypeDef *hcan);
 void HAL_CAN_TxMailbox2AbortCallback(CAN_HandleTypeDef *hcan);
+
+/* Callback function for CAN RX */
+void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *hcan);
+
 /* Swaps the ADC signals to their correct positions. */
 void ADC_swap(ADC_Samples_t *ret);
 
 /* Function that sends data over CAN Bus CORRECTLY */
-HAL_StatusTypeDef Send_CAN_Msg(uint32_t id, uint32_t dlc, uint8_t aData[]);
+HAL_StatusTypeDef Send_CAN_Msg(uint32_t id, uint32_t dlc, uint8_t aData[8]);
 
 void SimpleFilter(ADC_Samples_t *values, float *extAlpha);
 
@@ -132,6 +137,7 @@ static void MX_ADC2_Init(void);
 static void MX_CAN_Init(void);
 static void MX_I2C1_Init(void);
 void mainTask(void *argument);
+void setParametersTask(void *argument);
 
 /* USER CODE BEGIN PFP */
 
@@ -144,7 +150,6 @@ void HAL_I2C_MemTxCpltCallback(I2C_HandleTypeDef *hi2c);
 void HAL_I2C_MemRxCpltCallback(I2C_HandleTypeDef *hi2c);
 void HAL_I2C_ErrorCallback(I2C_HandleTypeDef *hi2c);
 
-HAL_StatusTypeDef Send_CAN_Msg(uint32_t id, uint32_t dlc, uint8_t aData[]);
 void ADC_swap(ADC_Samples_t *ret);
 
 /* USER CODE END PFP */
@@ -156,6 +161,8 @@ CAN_TxHeaderTypeDef TxHeader;	/* CAN Header */
 uint32_t mailbox;				/* CAN Bus mailbox */
 ADC_Samples_t ADC_Samples={0}, Final_ADC_Values={0};		/* ADC Data */
 
+static const canBusConfig_t defaultDataParamConfig = {.multiplier=1, .divider=1, .offset=0};
+canBusConfig_t dataParamConfig[TOTAL_CHANNELS_NUM];
 
 /* USER CODE END 0 */
 
@@ -194,6 +201,11 @@ int main(void)
   MX_CAN_Init();
   MX_I2C1_Init();
   /* USER CODE BEGIN 2 */
+
+	for (int i = 0; i < TOTAL_CHANNELS_NUM; i++) {
+		dataParamConfig[i] = defaultDataParamConfig;
+		dataParamConfig[i].index = i;
+	}
 
 	HAL_ADCEx_Calibration_Start(&hadc1, ADC_SINGLE_ENDED);
 	HAL_ADCEx_Calibration_Start(&hadc2, ADC_SINGLE_ENDED);
@@ -244,6 +256,10 @@ int main(void)
   /* start timers, add new ones, ... */
   /* USER CODE END RTOS_TIMERS */
 
+  /* Create the queue(s) */
+  /* creation of rxParamQueue */
+  rxParamQueueHandle = osMessageQueueNew (5, sizeof(canBusConfig_t), &rxParamQueue_attributes);
+
   /* USER CODE BEGIN RTOS_QUEUES */
   /* add queues, ... */
   /* USER CODE END RTOS_QUEUES */
@@ -251,6 +267,9 @@ int main(void)
   /* Create the thread(s) */
   /* creation of main */
   mainHandle = osThreadNew(mainTask, NULL, &main_attributes);
+
+  /* creation of setParameters */
+  setParametersHandle = osThreadNew(setParametersTask, NULL, &setParameters_attributes);
 
   /* USER CODE BEGIN RTOS_THREADS */
   /* add threads, ... */
@@ -533,6 +552,48 @@ static void MX_CAN_Init(void)
     Error_Handler();
   }
   /* USER CODE BEGIN CAN_Init 2 */
+  	// Configure CAN RX filter to accept EXTENDED IDs from 0x300 to 0x33F
+	CAN_FilterTypeDef rxFilterConfig = {0};
+
+	// Use filter bank 0
+	rxFilterConfig.FilterBank = 0;
+
+	// Use mask mode (ID & Mask comparison)
+	rxFilterConfig.FilterMode = CAN_FILTERMODE_IDMASK;
+
+	// Use 32-bit scale for one full extended ID filter
+	rxFilterConfig.FilterScale = CAN_FILTERSCALE_32BIT;
+
+	// Assign accepted messages to FIFO0
+	rxFilterConfig.FilterFIFOAssignment = CAN_FILTER_FIFO0;
+
+	// Enable the filter
+	rxFilterConfig.FilterActivation = CAN_FILTER_ENABLE;
+
+	/*
+	* Extended (29-bit) ID filters are left-shifted by 3 bits.
+	* Also, the IDE bit (bit 2) must be set to 1 to indicate extended IDs.
+	*
+	* Base ID:  0x300
+	* Mask:     0x7C0 (ignore lower 6 bits)
+	* Accepts all EXT IDs from 0x300 to 0x33F.
+	*/
+
+	// Set the base extended ID
+	uint32_t baseId = (0x300 << 3) | (1 << 2); // include IDE=1
+	uint32_t maskId = (0x7C0 << 3) | (1 << 2); // mask for extended IDs only
+
+	rxFilterConfig.FilterIdHigh = (baseId >> 16) & 0xFFFF;
+	rxFilterConfig.FilterIdLow  = baseId & 0xFFFF;
+	rxFilterConfig.FilterMaskIdHigh = (maskId >> 16) & 0xFFFF;
+	rxFilterConfig.FilterMaskIdLow  = maskId & 0xFFFF;
+
+	// Apply the filter
+	if (HAL_CAN_ConfigFilter(&hcan, &rxFilterConfig) != HAL_OK)
+	{
+		// Configuration Error
+		Error_Handler();
+	}
 
   /* USER CODE END CAN_Init 2 */
 
@@ -646,7 +707,7 @@ void ADC_swap(ADC_Samples_t *ret) {
 	ret->i16[7] = Final_ADC_Values.i16[6];
 }
 
-HAL_StatusTypeDef Send_CAN_Msg(uint32_t id, uint32_t dlc, uint8_t aData[]) {
+HAL_StatusTypeDef Send_CAN_Msg(uint32_t id, uint32_t dlc, uint8_t aData[8]) {
 	HAL_StatusTypeDef status;
 	TxHeader.ExtId = id;
 	TxHeader.DLC = dlc;
@@ -682,6 +743,30 @@ void HAL_CAN_TxMailbox1AbortCallback(CAN_HandleTypeDef *hcan){
 }
 void HAL_CAN_TxMailbox2AbortCallback(CAN_HandleTypeDef *hcan){
 	CAN_TX_Callback();
+}
+
+void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *hcan) {
+	CAN_RxHeaderTypeDef RxHeader;
+	uint8_t RxData[8] = {0};
+
+	if (HAL_CAN_GetRxMessage(hcan, CAN_RX_FIFO0, &RxHeader, RxData) != HAL_OK) {
+		// Reception Error
+		return;
+	}
+
+	if (RxHeader.ExtId < 0x300 || RxHeader.ExtId > 0x321) {
+		// ID out of range, ignore
+		return;
+	}
+
+	canBusConfig_t param = {0};
+	param.multiplier = (int16_t)(RxData[0] | (RxData[1] << 8));
+	param.divider = (int16_t)(RxData[2] | (RxData[3] << 8));
+	param.offset = (int16_t)(RxData[4] | (RxData[5] << 8));
+	param.index = (uint8_t)(RxHeader.ExtId - 0x300);
+
+	// timeout must be 0, we're in ISR context
+	osMessageQueuePut(rxParamQueueHandle, &param, 0, 0);
 }
 
 void SimpleFilter(ADC_Samples_t *values, float *extAlpha) {
@@ -789,6 +874,23 @@ void printIMU(axis3bit16_t *accel, axis3bit16_t *gyro) {
 }
 #endif
 
+void applyUserCalibration(ADC_Samples_t *values, axis3bit16_t *accel, axis3bit16_t *gyro) {
+	if (values) {
+		for (uint8_t i = POS_ADC_CHANNEL_1; i < POS_ADC_CHANNEL_8; i++) {
+			values->i16[i] = values->i16[i] * dataParamConfig[i].multiplier / dataParamConfig[i].divider + dataParamConfig[i].offset;
+		}
+	}
+	if (accel && gyro) {
+		accel->i16[0] = accel->i16[0] * dataParamConfig[POS_IMU_ACCEL_X].multiplier / dataParamConfig[POS_IMU_ACCEL_X].divider + dataParamConfig[POS_IMU_ACCEL_X].offset;
+		accel->i16[1] = accel->i16[1] * dataParamConfig[POS_IMU_ACCEL_Y].multiplier / dataParamConfig[POS_IMU_ACCEL_Y].divider + dataParamConfig[POS_IMU_ACCEL_Y].offset;
+		accel->i16[2] = accel->i16[2] * dataParamConfig[POS_IMU_ACCEL_Z].multiplier / dataParamConfig[POS_IMU_ACCEL_Z].divider + dataParamConfig[POS_IMU_ACCEL_Z].offset;
+
+		gyro->i16[0] = gyro->i16[0] * dataParamConfig[POS_IMU_GYRO_X].multiplier / dataParamConfig[POS_IMU_GYRO_X].divider + dataParamConfig[POS_IMU_GYRO_X].offset;
+		gyro->i16[1] = gyro->i16[1] * dataParamConfig[POS_IMU_GYRO_Y].multiplier / dataParamConfig[POS_IMU_GYRO_Y].divider + dataParamConfig[POS_IMU_GYRO_Y].offset;
+		gyro->i16[2] = gyro->i16[2] * dataParamConfig[POS_IMU_GYRO_Z].multiplier / dataParamConfig[POS_IMU_GYRO_Z].divider + dataParamConfig[POS_IMU_GYRO_Z].offset;
+	}
+}
+
 /* USER CODE END 4 */
 
 /* USER CODE BEGIN Header_mainTask */
@@ -819,12 +921,16 @@ void mainTask(void *argument)
 		SimpleFilter(&values, NULL);
 
 		#if IS_COG==0
+		applyUserCalibration(&values, NULL, NULL);
+
 		Send_CAN_Msg(CANBUS_ID_1, 8, &values.u8[0]); // Sends ADC data vol1
 		Send_CAN_Msg(CANBUS_ID_2, 8, &values.u8[8]); // Sends ADC data vol2
 		#endif
 		#if IS_COG==1
 		axis3bit16_t accel, gyro;
 		readFromIMU(&dev_ctx, &accel, &gyro);
+
+		applyUserCalibration(&values, &accel, &gyro);
 
 		Send_CAN_Msg(CANBUS_ID_1, 8, &accel.u8[0]); // Sends accel data
 		Send_CAN_Msg(CANBUS_ID_2, 8, &gyro.u8[0]); // Sends gyro data
@@ -835,6 +941,27 @@ void mainTask(void *argument)
 		osDelay(pdMS_TO_TICKS(10));
 	}
   /* USER CODE END 5 */
+}
+
+/* USER CODE BEGIN Header_setParametersTask */
+/**
+* @brief Function implementing the setParameters thread.
+* @param argument: Not used
+* @retval None
+*/
+/* USER CODE END Header_setParametersTask */
+void setParametersTask(void *argument)
+{
+  /* USER CODE BEGIN setParametersTask */
+  /* Infinite loop */
+	while (1) {
+		canBusConfig_t rxParam = defaultDataParamConfig;
+		osMessageQueueGet(rxParamQueueHandle, &rxParam, NULL, osWaitForever);
+		if (rxParam.index < TOTAL_CHANNELS_NUM && rxParam.divider != 0) {
+			dataParamConfig[rxParam.index] = rxParam;
+		}
+	}
+  /* USER CODE END setParametersTask */
 }
 
 /**

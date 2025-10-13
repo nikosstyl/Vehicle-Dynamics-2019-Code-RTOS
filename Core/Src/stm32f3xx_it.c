@@ -221,6 +221,20 @@ void CAN_TX_IRQHandler(void)
 }
 
 /**
+  * @brief This function handles CAN RX0 interrupt.
+  */
+void CAN_RX0_IRQHandler(void)
+{
+  /* USER CODE BEGIN CAN_RX0_IRQn 0 */
+
+  /* USER CODE END CAN_RX0_IRQn 0 */
+  HAL_CAN_IRQHandler(&hcan);
+  /* USER CODE BEGIN CAN_RX0_IRQn 1 */
+
+  /* USER CODE END CAN_RX0_IRQn 1 */
+}
+
+/**
   * @brief This function handles TIM1 update and TIM16 interrupts.
   */
 void TIM1_UP_TIM16_IRQHandler(void)
