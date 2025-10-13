@@ -119,7 +119,7 @@ void ADC_swap(ADC_Samples_t *ret);
 /* Function that sends data over CAN Bus CORRECTLY */
 HAL_StatusTypeDef Send_CAN_Msg(uint32_t id, uint32_t dlc, uint8_t aData[]);
 
-void SimpleFilter(ADC_Samples_t *values);
+void SimpleFilter(ADC_Samples_t *values, float *extAlpha);
 
 /* USER CODE END PV */
 
@@ -195,21 +195,8 @@ int main(void)
   MX_I2C1_Init();
   /* USER CODE BEGIN 2 */
 
-	uint8_t retries = 0;
-	while (retries < 4) {
-		if (HAL_ADCEx_Calibration_Start(&hadc1, ADC_SINGLE_ENDED) != HAL_OK) {
-			retries++;
-		}
-		else {
-			break;
-		}
-		if (HAL_ADCEx_Calibration_Start(&hadc2, ADC_SINGLE_ENDED) != HAL_OK) {
-			retries++;
-		}
-		else {
-			break;
-		}
-	}
+	HAL_ADCEx_Calibration_Start(&hadc1, ADC_SINGLE_ENDED);
+	HAL_ADCEx_Calibration_Start(&hadc2, ADC_SINGLE_ENDED);
 
 	HAL_StatusTypeDef status = HAL_ADC_Start(&hadc2);
 	if (status != HAL_OK) {
@@ -238,7 +225,7 @@ int main(void)
 
   /* Create the semaphores(s) */
   /* creation of adcDataSemaphore */
-  adcDataSemaphoreHandle = osSemaphoreNew(1, 1, &adcDataSemaphore_attributes);
+  adcDataSemaphoreHandle = osSemaphoreNew(1, 0, &adcDataSemaphore_attributes);
 
   /* creation of i2cTxSemaphore */
   i2cTxSemaphoreHandle = osSemaphoreNew(1, 1, &i2cTxSemaphore_attributes);
@@ -281,12 +268,6 @@ int main(void)
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
 	while (1) {
-	ADC_Samples_t tmp;
-	ADC_swap(&tmp);
-
-	Send_CAN_Msg(CANBUS_ID_1, 8, &tmp.u8[0]);
-	Send_CAN_Msg(CANBUS_ID_2, 8, &tmp.u8[8]);
-	HAL_Delay(10);
 
     /* USER CODE END WHILE */
 
@@ -703,10 +684,10 @@ void HAL_CAN_TxMailbox2AbortCallback(CAN_HandleTypeDef *hcan){
 	CAN_TX_Callback();
 }
 
-void SimpleFilter(ADC_Samples_t *values) {
+void SimpleFilter(ADC_Samples_t *values, float *extAlpha) {
 	for (uint8_t i = 0; i < 8; i++) {
 		static float filtered[8] = {0};
-		const float alpha = 0.1f;
+		const float alpha = extAlpha ? *extAlpha : 0.1f;
 		filtered[i] += alpha * ((float)values->i16[i] - filtered[i]);
 		values->i16[i] = (int16_t)filtered[i];
 	}
@@ -780,6 +761,34 @@ void HAL_I2C_ErrorCallback(I2C_HandleTypeDef *hi2c) {
 	Error_Handler();
 }
 
+#if DEBUG==1
+int _write(int le, char *ptr, int len) {
+	int DataIdx;
+	for(DataIdx = 0; DataIdx < len; DataIdx++)
+		{
+		ITM_SendChar(*ptr++);
+		}
+	return len;
+}
+
+void printADC(ADC_Samples_t *values) {
+	if (!values) {
+		return;
+	}
+	for (int i=0;i<8;i++) {
+		printf("ADC %d: %d\r\n", i, values->i16[i]);
+	}
+}
+
+void printIMU(axis3bit16_t *accel, axis3bit16_t *gyro) {
+	if (!accel || !gyro) {
+		return;
+	}
+	printf("Accel: X=%d mg, Y=%d mg, Z=%d mg\r\n", accel->i16[0], accel->i16[1], accel->i16[2]);
+	printf("Gyro: X=%d mdps, Y=%d mdps, Z=%d mdps\r\n", gyro->i16[0], gyro->i16[1], gyro->i16[2]);
+}
+#endif
+
 /* USER CODE END 4 */
 
 /* USER CODE BEGIN Header_mainTask */
@@ -804,10 +813,10 @@ void mainTask(void *argument)
 
 	while (1) {
 		ADC_Samples_t values = {0};
-		osSemaphoreAcquire(adcDataSemaphoreHandle, pdMS_TO_TICKS(1));
-		Final_ADC_Values = ADC_Samples;
+		osSemaphoreAcquire(adcDataSemaphoreHandle, pdMS_TO_TICKS(5));
+		Final_ADC_Values = ADC_Samples; // Buffer the ADC values during safe read
 		ADC_swap(&values);
-		SimpleFilter(&values);
+		SimpleFilter(&values, NULL);
 
 		#if IS_COG==0
 		Send_CAN_Msg(CANBUS_ID_1, 8, &values.u8[0]); // Sends ADC data vol1
@@ -877,7 +886,7 @@ void assert_failed(uint8_t *file, uint32_t line)
 {
   /* USER CODE BEGIN 6 */
   /* User can add his own implementation to report the file name and line number,
-     ex: printf("Wrong parameters value: file %s on line %d\r\n", file, line) */
+	 ex: printf("Wrong parameters value: file %s on line %d\r\n", file, line) */
   /* USER CODE END 6 */
 }
 #endif /* USE_FULL_ASSERT */

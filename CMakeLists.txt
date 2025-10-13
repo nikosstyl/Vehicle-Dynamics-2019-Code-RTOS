@@ -106,6 +106,12 @@ if(IS_COG)
 	message(STATUS "CANBUS_ID_4 = ${CANBUS_ID_4}")
 endif(IS_COG)
 
+if (CMAKE_BUILD_TYPE STREQUAL "Debug")
+	set(DEBUG_BUILD 1)
+else()
+	set(DEBUG_BUILD 0)
+endif()
+
 configure_file(
     ${CMAKE_SOURCE_DIR}/Core/Inc/config.h.in
     ${CMAKE_CURRENT_BINARY_DIR}/config.h

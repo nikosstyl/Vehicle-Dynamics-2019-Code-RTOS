@@ -1,5 +1,7 @@
 #pragma once
 
+#define DEBUG @DEBUG_BUILD@
+
 #define IS_COG @IS_COG@
 
 #define CANBUS_ID_1 @CANBUS_ID_1@
