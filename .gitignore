@@ -1,2 +1,4 @@
 .vscode/
 build/
+.settings/
+.clangd
