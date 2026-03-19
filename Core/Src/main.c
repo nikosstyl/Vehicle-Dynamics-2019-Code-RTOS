@@ -281,13 +281,7 @@ int main(void)
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
 	while (1) {
-	ADC_Samples_t tmp;
-	ADC_swap(&tmp);
-
-	Send_CAN_Msg(CANBUS_ID_1, 8, &tmp.u8[0]);
-	Send_CAN_Msg(CANBUS_ID_2, 8, &tmp.u8[8]);
-	HAL_Delay(10);
-
+    
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
