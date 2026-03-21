@@ -1,3 +1,6 @@
+#ifndef __CONFIG_H__
+#define __CONFIG_H__
+
 #pragma once
 
 #define IS_COG @IS_COG@
@@ -8,4 +11,6 @@
 #if IS_COG==1
 #define CANBUS_ID_3 @CANBUS_ID_3@
 #define CANBUS_ID_4 @CANBUS_ID_4@
+#endif
+
 #endif
