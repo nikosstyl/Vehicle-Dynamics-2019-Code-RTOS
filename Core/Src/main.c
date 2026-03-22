@@ -26,6 +26,8 @@
 #include "stdbool.h"
 #include "asm330lhh_reg.h"
 #include "config.h"
+#include "string.h"
+#include "stdarg.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -716,6 +718,7 @@ void SimpleFilter(ADC_Samples_t *values) {
 	}
 }
 
+#if IS_COG
 /*
  * @brief  Write generic device register (platform dependent)
  *
@@ -747,6 +750,7 @@ static int32_t platform_read(void *handle, uint8_t reg, uint8_t *bufp, uint16_t 
 	return(HAL_I2C_Mem_Read_DMA(&hi2c1, ASM330LHH_I2C_ADD_H, reg, I2C_MEMADD_SIZE_8BIT, (uint8_t*) bufp, len));
 
 }
+#endif
 
 void initializeIMU(stmdev_ctx_t *dev_ctx) {
 	asm330lhh_device_conf_set(dev_ctx, PROPERTY_ENABLE);			/* Start device configuration */
