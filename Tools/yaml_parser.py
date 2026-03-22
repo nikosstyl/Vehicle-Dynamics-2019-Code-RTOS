@@ -11,9 +11,8 @@ def main(yaml_file:str, which_board:str, env_file:str, print_cgf:bool):
         config = yaml.safe_load(stream)
 
         if print_cgf:
-            for key in config.keys():
-                if key != FW_VERSION_KEY:
-                    print(key)
+            boards = [key for key in config.keys() if key != FW_VERSION_KEY]
+            print(", ".join(boards))
             exit(0)
 
         if which_board not in config.keys():

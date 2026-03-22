@@ -1,4 +1,10 @@
-FIRMWARE_VERSION: v0.5.1
+# Simple board configuration yaml file. A user can define any parameters in this
+# file and they can appear in the CMake, thus can be used in the code on compile-time.
+# Using GitHub workflows, all configs are compiled and uploaded as a release.
+# The goal of this .yaml file is for a user to add quickly and easily 
+# different defined values for multiple board configurations (e.g. front/cog/rear)
+
+FIRMWARE_VERSION: v0.5.2
 
 vd_cog:
   canbus_id_1: 0x30
@@ -6,11 +12,14 @@ vd_cog:
   canbus_id_3: 0x32
   canbus_id_4: 0x33
   is_cog: 1
+  cmake_build_type: RelWithDebInfo # Used to identify the CMake build type for each board config.
 
 vd_front:
   canbus_id_1: 0x34
   canbus_id_2: 0x35
+  cmake_build_type: RelWithDebInfo
 
 vd_rear:
   canbus_id_1: 0x36
   canbus_id_2: 0x37
+  cmake_build_type: RelWithDebInfo

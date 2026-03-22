@@ -14,9 +14,10 @@ for board in $BOARD_CONFIGS; do
 
     cmake -B $BUILD_DIR \
         -DCMAKE_TOOLCHAIN_FILE=cmake/gcc-arm-none-eabi.cmake \
-        -DBOARD=${board} -G Ninja
+        -DBOARD=${board} \
+        -G Ninja
 
-    cmake --build $BUILD_DIR --config Release
+    cmake --build $BUILD_DIR
 
     # Find ELF
     ELF_FILE=$(find $BUILD_DIR -maxdepth 1 -type f -name "*.elf")
