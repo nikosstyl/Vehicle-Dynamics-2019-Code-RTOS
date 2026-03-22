@@ -72,16 +72,43 @@ target_link_libraries(${CMAKE_PROJECT_NAME}
 )
 
 # Add variables for configuration
-# These can be overridden from command line using -D<VAR>=<value>
-# Example: cmake -DCANBUS_ID_1=0x34 -DCANBUS_ID_2=0x35 -DIS_COG=1 ..
-set(CANBUS_ID_1 0x34)
-set(CANBUS_ID_2 0x35)
-set(CANBUS_ID_3 0x36)
-set(CANBUS_ID_4 0x37)
-set(IS_COG 0)
+# Those variables are being read from the boards_config.yaml file found in the root of the repo
+# Set another board with -DBOARD for building a different board
+# set(BOARD "board_1")
+
+if (NOT DEFINED BOARD)
+	message(STATUS "Board configuration is not defined. Please select one of the following configs.")
+	execute_process(
+		COMMAND python3 ${CMAKE_SOURCE_DIR}/Tools/yaml_parser.py -f ${CMAKE_SOURCE_DIR}/boards_config.yaml -b NULL -o NULL -p
+		RESULT_VARIABLE result
+	)
+	message(FATAL_ERROR)
+endif()
+
+execute_process(
+	COMMAND python3 ${CMAKE_SOURCE_DIR}/Tools/yaml_parser.py -f ${CMAKE_SOURCE_DIR}/boards_config.yaml -b ${BOARD} -o ${CMAKE_CURRENT_BINARY_DIR}/.env
+	RESULT_VARIABLE result
+)
+
+if (NOT result EQUAL 0)
+	message(FATAL_ERROR "yaml_parser failed.")
+endif()
+
+# Parse .env file and get all necessary IDs
+file(STRINGS "${CMAKE_CURRENT_BINARY_DIR}/.env" env_lines)
+foreach(line ${env_lines})
+  if(line MATCHES "^([^=]+)=(.*)$")
+    set(${CMAKE_MATCH_1} "${CMAKE_MATCH_2}")
+  else()
+    message(FATAL_ERROR "Malformed .env entry: ${line}")
+  endif()
+endforeach()
+
+message(STATUS "Building firmware version: ${FIRMWARE_VERSION}")
 
 if (NOT DEFINED IS_COG)
-	message(FATAL_ERROR "IS_COG is not defined. Please define it using -DIS_COG=<value>")
+	set(IS_COG 0)
+	message(STATUS "IS_COG is not defined. Using only the following 2 IDS: ${CANBUS_ID_1}, ${CANBUS_ID_2}")
 endif()
 if (NOT DEFINED CANBUS_ID_1)
 	message(FATAL_ERROR "CANBUS_ID_1 is not defined. Please define it using -DCANBUS_ID_1=<value>")

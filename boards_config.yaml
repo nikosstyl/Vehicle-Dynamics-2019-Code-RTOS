@@ -1,0 +1,16 @@
+FIRMWARE_VERSION: v0.5.1
+
+vd_cog:
+  canbus_id_1: 0x30
+  canbus_id_2: 0x31
+  canbus_id_3: 0x32
+  canbus_id_4: 0x33
+  is_cog: 1
+
+vd_front:
+  canbus_id_1: 0x34
+  canbus_id_2: 0x35
+
+vd_rear:
+  canbus_id_1: 0x36
+  canbus_id_2: 0x37
