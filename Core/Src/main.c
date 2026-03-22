@@ -26,6 +26,8 @@
 #include "stdbool.h"
 #include "asm330lhh_reg.h"
 #include "config.h"
+#include "string.h"
+#include "stdarg.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -195,6 +197,16 @@ int main(void)
   MX_I2C1_Init();
   /* USER CODE BEGIN 2 */
 
+  // Print useful information during start-up.
+  ItmPrintf("Vehicle Dynamics Board, 2019, Centaurus Racing Team\n");
+  ItmPrintf("Firmware Version: %s\nCompiled at: %s\n\n", FIRMWARE_VERSION, COMPILE_DATETIME);
+  ItmPrintf("Compiled with the following variables:\n");
+  #if IS_COG
+  ItmPrintf("\tCOG Board\n\tCANBUS_ID_1: %x\n\tCANBUS_ID_2: %d\n\tCANBUS_ID_3: %x\n\tCANBUS_ID_4: %x\n", CANBUS_ID_1, CANBUS_ID_2, CANBUS_ID_3, CANBUS_ID_4);
+  #else
+  ItmPrintf("\tCANBUS_ID_1: %x\n\tCANBUS_ID_2: %d\n", CANBUS_ID_1, CANBUS_ID_2);
+  #endif
+
 	uint8_t retries = 0;
 	while (retries < 4) {
 		if (HAL_ADCEx_Calibration_Start(&hadc1, ADC_SINGLE_ENDED) != HAL_OK) {
@@ -281,13 +293,7 @@ int main(void)
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
 	while (1) {
-	ADC_Samples_t tmp;
-	ADC_swap(&tmp);
-
-	Send_CAN_Msg(CANBUS_ID_1, 8, &tmp.u8[0]);
-	Send_CAN_Msg(CANBUS_ID_2, 8, &tmp.u8[8]);
-	HAL_Delay(10);
-
+    
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -780,6 +786,24 @@ void HAL_I2C_ErrorCallback(I2C_HandleTypeDef *hi2c) {
 	Error_Handler();
 }
 
+int ItmPrintf(const char *format, ...) {
+  char tmpBuffer[2048]={'\0'}; 
+  
+  va_list args;
+  va_start(args, format);
+  int retval = vsnprintf(tmpBuffer, sizeof(tmpBuffer), format, args);
+  if (retval < 0 || retval > sizeof(tmpBuffer)) {
+    ITM_SendChar('?');
+  }
+  else {
+    for (int i=0;i<retval;i++) {
+      ITM_SendChar(tmpBuffer[i]);
+    }
+  }
+  va_end(args);
+  return retval;
+}
+
 /* USER CODE END 4 */
 
 /* USER CODE BEGIN Header_mainTask */
@@ -812,8 +836,7 @@ void mainTask(void *argument)
 		#if IS_COG==0
 		Send_CAN_Msg(CANBUS_ID_1, 8, &values.u8[0]); // Sends ADC data vol1
 		Send_CAN_Msg(CANBUS_ID_2, 8, &values.u8[8]); // Sends ADC data vol2
-		#endif
-		#if IS_COG==1
+    #elif IS_COG==1
 		axis3bit16_t accel, gyro;
 		readFromIMU(&dev_ctx, &accel, &gyro);
 
@@ -858,7 +881,6 @@ void Error_Handler(void)
 {
   /* USER CODE BEGIN Error_Handler_Debug */
   /* User can add his own implementation to report the HAL error return state */
-  HAL_Delay(5);
   while (1)
   {
 	NVIC_SystemReset();

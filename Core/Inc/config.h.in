@@ -1,4 +1,10 @@
+#ifndef __CONFIG_H__
+#define __CONFIG_H__
+
 #pragma once
+
+#define FIRMWARE_VERSION "@FIRMWARE_VERSION@"
+#define COMPILE_DATETIME "@COMPILE_DATETIME@"
 
 #define IS_COG @IS_COG@
 
@@ -8,4 +14,6 @@
 #if IS_COG==1
 #define CANBUS_ID_3 @CANBUS_ID_3@
 #define CANBUS_ID_4 @CANBUS_ID_4@
+#endif
+
 #endif
