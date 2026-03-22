@@ -25,7 +25,7 @@ if (NOT DEFINED BOARD)
 	)
 	message(FATAL_ERROR "Board configuration is not defined. Please select one of the following configs"
 			" of the ${CMAKE_SOURCE_DIR}/boards_config.yaml file. "
-			"Available configurations are:\n\t${configs}"
+			"Available configurations are:\n${configs}"
 	)
 endif()
 

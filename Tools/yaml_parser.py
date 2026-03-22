@@ -12,7 +12,7 @@ def main(yaml_file:str, which_board:str, env_file:str, print_cgf:bool):
 
         if print_cgf:
             boards = [key for key in config.keys() if key != FW_VERSION_KEY]
-            print(", ".join(boards))
+            print("\n".join(boards))
             exit(0)
 
         if which_board not in config.keys():
