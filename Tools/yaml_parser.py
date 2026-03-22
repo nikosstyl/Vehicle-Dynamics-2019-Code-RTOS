@@ -4,7 +4,6 @@ FW_VERSION_KEY = "FIRMWARE_VERSION"
 
 def main(yaml_file:str, which_board:str, env_file:str, print_cgf:bool):
     yaml_file = pathlib.Path(yaml_file).resolve().as_posix()
-    env_file = pathlib.Path(env_file).resolve().as_posix()
 
     env_contents = []
 
@@ -32,6 +31,7 @@ def main(yaml_file:str, which_board:str, env_file:str, print_cgf:bool):
             env_contents.append(f"{key.upper()}={pairs.get(key)}")
 
     if not print_cgf:
+        env_file = pathlib.Path(env_file).resolve().as_posix()
         with open(env_file, "w") as file:
             for contents in env_contents:
                 print(contents, file=file)
@@ -39,8 +39,8 @@ def main(yaml_file:str, which_board:str, env_file:str, print_cgf:bool):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument('-f', "--file", help="Boards configuration input YAML file.")
-    parser.add_argument('-b', "--board", help="Desired board for config generation.")
+    parser.add_argument('-f', "--file", metavar="YAML File", help="Boards configuration input YAML file.")
+    parser.add_argument('-b', "--board", metavar="Board" ,help="Desired board for config generation.")
     parser.add_argument('-o', "--output_file", metavar="Output File", help="Specify the output generated .env file.")
     parser.add_argument("-p", "--print_configs", action="store_true", help="Print all the available board configurations and return.")
     
@@ -50,8 +50,10 @@ if __name__ == "__main__":
     env_file = args.output_file
     print_configs = args.print_configs
 
-    if yaml_file is None or which_board is None or env_file is None:
-        parser.print_usage()
+    if yaml_file is None:
+        parser.print_help()
+
+    if print_configs == False and (which_board is None or env_file is None):
         parser.print_help()
         exit(1)
 

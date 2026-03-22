@@ -4,6 +4,7 @@
 #pragma once
 
 #define FIRMWARE_VERSION "@FIRMWARE_VERSION@"
+#define COMPILE_DATETIME "@COMPILE_DATETIME@"
 
 #define IS_COG @IS_COG@
 

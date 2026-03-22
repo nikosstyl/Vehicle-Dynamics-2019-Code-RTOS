@@ -74,7 +74,8 @@ target_link_libraries(${CMAKE_PROJECT_NAME}
 # Add variables for configuration
 # Those variables are being read from the boards_config.yaml file found in the root of the repo
 # Set another board with -DBOARD for building a different board
-# set(BOARD "board_1")
+
+# set(BOARD "vd_cog")
 
 if (NOT DEFINED BOARD)
 	message(STATUS "Board configuration is not defined. Please select one of the following configs.")
@@ -132,6 +133,8 @@ if(IS_COG)
 	message(STATUS "CANBUS_ID_3 = ${CANBUS_ID_3}")
 	message(STATUS "CANBUS_ID_4 = ${CANBUS_ID_4}")
 endif(IS_COG)
+
+string(TIMESTAMP COMPILE_DATETIME UTC)
 
 configure_file(
     ${CMAKE_SOURCE_DIR}/Core/Inc/config.h.in
