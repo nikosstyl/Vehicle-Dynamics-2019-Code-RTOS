@@ -26,6 +26,8 @@
 #include "stdbool.h"
 #include "asm330lhh_reg.h"
 #include "config.h"
+#include "string.h"
+#include "stdarg.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -202,13 +204,31 @@ int main(void)
   MX_I2C1_Init();
   /* USER CODE BEGIN 2 */
 
-	for (int i = 0; i < TOTAL_CHANNELS_NUM; i++) {
-		dataParamConfig[i] = defaultDataParamConfig;
-		dataParamConfig[i].index = i;
-	}
+  // Print useful information during start-up.
+  ItmPrintf("Vehicle Dynamics Board, 2019, Centaurus Racing Team\n");
+  ItmPrintf("Firmware Version: %s\nCompiled at: %s\n\n", FIRMWARE_VERSION, COMPILE_DATETIME);
+  ItmPrintf("Compiled with the following variables:\n");
+  #if IS_COG
+  ItmPrintf("\tCOG Board\n\tCANBUS_ID_1: %x\n\tCANBUS_ID_2: %d\n\tCANBUS_ID_3: %x\n\tCANBUS_ID_4: %x\n", CANBUS_ID_1, CANBUS_ID_2, CANBUS_ID_3, CANBUS_ID_4);
+  #else
+  ItmPrintf("\tCANBUS_ID_1: %x\n\tCANBUS_ID_2: %d\n", CANBUS_ID_1, CANBUS_ID_2);
+  #endif
 
-	HAL_ADCEx_Calibration_Start(&hadc1, ADC_SINGLE_ENDED);
-	HAL_ADCEx_Calibration_Start(&hadc2, ADC_SINGLE_ENDED);
+	uint8_t retries = 0;
+	while (retries < 4) {
+		if (HAL_ADCEx_Calibration_Start(&hadc1, ADC_SINGLE_ENDED) != HAL_OK) {
+			retries++;
+		}
+		else {
+			break;
+		}
+		if (HAL_ADCEx_Calibration_Start(&hadc2, ADC_SINGLE_ENDED) != HAL_OK) {
+			retries++;
+		}
+		else {
+			break;
+		}
+	}
 
 	HAL_StatusTypeDef status = HAL_ADC_Start(&hadc2);
 	if (status != HAL_OK) {
@@ -287,7 +307,7 @@ int main(void)
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
 	while (1) {
-
+    
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -846,49 +866,22 @@ void HAL_I2C_ErrorCallback(I2C_HandleTypeDef *hi2c) {
 	Error_Handler();
 }
 
-#if DEBUG==1
-int _write(int le, char *ptr, int len) {
-	int DataIdx;
-	for(DataIdx = 0; DataIdx < len; DataIdx++)
-		{
-		ITM_SendChar(*ptr++);
-		}
-	return len;
-}
-
-void printADC(ADC_Samples_t *values) {
-	if (!values) {
-		return;
-	}
-	for (int i=0;i<8;i++) {
-		printf("ADC %d: %d\r\n", i, values->i16[i]);
-	}
-}
-
-void printIMU(axis3bit16_t *accel, axis3bit16_t *gyro) {
-	if (!accel || !gyro) {
-		return;
-	}
-	printf("Accel: X=%d mg, Y=%d mg, Z=%d mg\r\n", accel->i16[0], accel->i16[1], accel->i16[2]);
-	printf("Gyro: X=%d mdps, Y=%d mdps, Z=%d mdps\r\n", gyro->i16[0], gyro->i16[1], gyro->i16[2]);
-}
-#endif
-
-void applyUserCalibration(ADC_Samples_t *values, axis3bit16_t *accel, axis3bit16_t *gyro) {
-	if (values) {
-		for (uint8_t i = POS_ADC_CHANNEL_1; i < POS_ADC_CHANNEL_8; i++) {
-			values->i16[i] = values->i16[i] * dataParamConfig[i].multiplier / dataParamConfig[i].divider + dataParamConfig[i].offset;
-		}
-	}
-	if (accel && gyro) {
-		accel->i16[0] = accel->i16[0] * dataParamConfig[POS_IMU_ACCEL_X].multiplier / dataParamConfig[POS_IMU_ACCEL_X].divider + dataParamConfig[POS_IMU_ACCEL_X].offset;
-		accel->i16[1] = accel->i16[1] * dataParamConfig[POS_IMU_ACCEL_Y].multiplier / dataParamConfig[POS_IMU_ACCEL_Y].divider + dataParamConfig[POS_IMU_ACCEL_Y].offset;
-		accel->i16[2] = accel->i16[2] * dataParamConfig[POS_IMU_ACCEL_Z].multiplier / dataParamConfig[POS_IMU_ACCEL_Z].divider + dataParamConfig[POS_IMU_ACCEL_Z].offset;
-
-		gyro->i16[0] = gyro->i16[0] * dataParamConfig[POS_IMU_GYRO_X].multiplier / dataParamConfig[POS_IMU_GYRO_X].divider + dataParamConfig[POS_IMU_GYRO_X].offset;
-		gyro->i16[1] = gyro->i16[1] * dataParamConfig[POS_IMU_GYRO_Y].multiplier / dataParamConfig[POS_IMU_GYRO_Y].divider + dataParamConfig[POS_IMU_GYRO_Y].offset;
-		gyro->i16[2] = gyro->i16[2] * dataParamConfig[POS_IMU_GYRO_Z].multiplier / dataParamConfig[POS_IMU_GYRO_Z].divider + dataParamConfig[POS_IMU_GYRO_Z].offset;
-	}
+int ItmPrintf(const char *format, ...) {
+  char tmpBuffer[2048]={'\0'}; 
+  
+  va_list args;
+  va_start(args, format);
+  int retval = vsnprintf(tmpBuffer, sizeof(tmpBuffer), format, args);
+  if (retval < 0 || retval > sizeof(tmpBuffer)) {
+    ITM_SendChar('?');
+  }
+  else {
+    for (int i=0;i<retval;i++) {
+      ITM_SendChar(tmpBuffer[i]);
+    }
+  }
+  va_end(args);
+  return retval;
 }
 
 /* USER CODE END 4 */
@@ -925,8 +918,7 @@ void mainTask(void *argument)
 
 		Send_CAN_Msg(CANBUS_ID_1, 8, &values.u8[0]); // Sends ADC data vol1
 		Send_CAN_Msg(CANBUS_ID_2, 8, &values.u8[8]); // Sends ADC data vol2
-		#endif
-		#if IS_COG==1
+    #elif IS_COG==1
 		axis3bit16_t accel, gyro;
 		readFromIMU(&dev_ctx, &accel, &gyro);
 
@@ -994,7 +986,6 @@ void Error_Handler(void)
 {
   /* USER CODE BEGIN Error_Handler_Debug */
   /* User can add his own implementation to report the HAL error return state */
-  HAL_Delay(5);
   while (1)
   {
 	NVIC_SystemReset();

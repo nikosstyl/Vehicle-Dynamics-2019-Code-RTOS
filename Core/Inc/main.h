@@ -90,6 +90,13 @@ void Error_Handler(void);
 
 /* USER CODE BEGIN EFP */
 
+/**
+ * @brief A printf-like function that sends data
+ *        over the ITM bus. The arguments are exactly the same 
+ *        as in printf.
+ */
+int ItmPrintf(const char *format, ...);
+
 /* USER CODE END EFP */
 
 /* Private defines -----------------------------------------------------------*/

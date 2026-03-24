@@ -12,9 +12,45 @@ set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_C_EXTENSIONS ON)
 
+# Add variables for configuration
+# Those variables are being read from the boards_config.yaml file found in the root of the repo
+# Set another board with -DBOARD for building a different board
+# set(BOARD "vd_cog")
+
+if (NOT DEFINED BOARD)
+	execute_process(
+		COMMAND python3 ${CMAKE_SOURCE_DIR}/Tools/yaml_parser.py -f ${CMAKE_SOURCE_DIR}/boards_config.yaml -p
+		RESULT_VARIABLE result
+		OUTPUT_VARIABLE configs
+	)
+	message(FATAL_ERROR "Board configuration is not defined. Please select one of the following configs"
+			" of the ${CMAKE_SOURCE_DIR}/boards_config.yaml file. "
+			"Available configurations are:\n${configs}"
+	)
+endif()
+
+execute_process(
+	COMMAND python3 ${CMAKE_SOURCE_DIR}/Tools/yaml_parser.py -f ${CMAKE_SOURCE_DIR}/boards_config.yaml -b ${BOARD} -o ${CMAKE_CURRENT_BINARY_DIR}/.env
+	COMMAND_ECHO STDOUT
+	RESULT_VARIABLE result
+)
+
+if (NOT result EQUAL 0)
+	message(FATAL_ERROR "yaml_parser failed.")
+endif()
+
+# Parse .env file and get all necessary IDs
+file(STRINGS "${CMAKE_CURRENT_BINARY_DIR}/.env" env_lines)
+foreach(line ${env_lines})
+  if(line MATCHES "^([^=]+)=(.*)$")
+    set(${CMAKE_MATCH_1} "${CMAKE_MATCH_2}")
+  else()
+    message(FATAL_ERROR "Malformed .env entry: ${line}")
+  endif()
+endforeach()
 
 # Define the build type
-if(NOT CMAKE_BUILD_TYPE)
+if(NOT DEFINED CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE "Debug")
 endif()
 
@@ -71,31 +107,25 @@ target_link_libraries(${CMAKE_PROJECT_NAME}
     # Add user defined libraries
 )
 
-# Add variables for configuration
-# These can be overridden from command line using -D<VAR>=<value>
-# Example: cmake -DCANBUS_ID_1=0x34 -DCANBUS_ID_2=0x35 -DIS_COG=1 ..
-set(CANBUS_ID_1 0x34)
-set(CANBUS_ID_2 0x35)
-set(CANBUS_ID_3 0x36)
-set(CANBUS_ID_4 0x37)
-set(IS_COG 0)
+message(STATUS "Building firmware version: ${FIRMWARE_VERSION}")
 
 if (NOT DEFINED IS_COG)
-	message(FATAL_ERROR "IS_COG is not defined. Please define it using -DIS_COG=<value>")
+	set(IS_COG 0)
+	message(STATUS "IS_COG is not defined. Using only the following 2 IDS: ${CANBUS_ID_1}, ${CANBUS_ID_2}")
 endif()
 if (NOT DEFINED CANBUS_ID_1)
-	message(FATAL_ERROR "CANBUS_ID_1 is not defined. Please define it using -DCANBUS_ID_1=<value>")
+	message(FATAL_ERROR "CANBUS_ID_1 is not defined. Please define it using the boards_config.yaml file.")
 endif()
 if (NOT DEFINED CANBUS_ID_2)
-	message(FATAL_ERROR "CANBUS_ID_2 is not defined. Please define it using -DCANBUS_ID_2=<value>")
+	message(FATAL_ERROR "CANBUS_ID_2 is not defined. Please define it using the boards_config.yaml file.")
 endif()
 if(IS_COG)
 	message(STATUS "Building COG variant")
 	if (NOT DEFINED CANBUS_ID_3)
-		message(FATAL_ERROR "CANBUS_ID_3 is not defined. Please define it using -DCANBUS_ID_3=<value>")
+		message(FATAL_ERROR "CANBUS_ID_3 is not defined. Please define it using the boards_config.yaml file.")
 	endif()
 	if (NOT DEFINED CANBUS_ID_4)
-		message(FATAL_ERROR "CANBUS_ID_4 is not defined. Please define it using -DCANBUS_ID_4=<value>")
+		message(FATAL_ERROR "CANBUS_ID_4 is not defined. Please define it using the boards_config.yaml file.")
 	endif()
 endif(IS_COG)
 
@@ -106,11 +136,7 @@ if(IS_COG)
 	message(STATUS "CANBUS_ID_4 = ${CANBUS_ID_4}")
 endif(IS_COG)
 
-if (CMAKE_BUILD_TYPE STREQUAL "Debug")
-	set(DEBUG_BUILD 1)
-else()
-	set(DEBUG_BUILD 0)
-endif()
+string(TIMESTAMP COMPILE_DATETIME UTC)
 
 configure_file(
     ${CMAKE_SOURCE_DIR}/Core/Inc/config.h.in
