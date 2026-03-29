@@ -48,6 +48,8 @@
 
 #define EVENT_CAN_TX_DONE 0x1
 
+#define CAN_RX_FIFO_USED CAN_RX_FIFO0
+
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -587,48 +589,27 @@ static void MX_CAN_Init(void)
     Error_Handler();
   }
   /* USER CODE BEGIN CAN_Init 2 */
-  	// Configure CAN RX filter to accept EXTENDED IDs from 0x300 to 0x33F
-	CAN_FilterTypeDef rxFilterConfig = {0};
+  
+  // Configure a CAN Bus filter to only notify the MCU 
+  // on the correct address.
+  CAN_FilterTypeDef filter = {0};
+  
+  uint32_t filterId = (CANBUS_RCV_ADDR << 3) | 0x04;
+  uint32_t filterMask = (0x1FFFFFFF << 3) | 0x04;
 
-	// Use filter bank 0
-	rxFilterConfig.FilterBank = 0;
+  filter.FilterBank = 0;
+  filter.FilterMode = CAN_FILTERMODE_IDMASK;
+  filter.FilterScale = CAN_FILTERSCALE_32BIT;
+  filter.FilterIdHigh = (filterId >> 16) & 0xFFFF;
+  filter.FilterIdLow = filterId & 0xFFFF;
+  filter.FilterMaskIdHigh = (filterMask >> 16) & 0xFFFF;
+  filter.FilterMaskIdLow = filterMask & 0xFFFF;
+  filter.FilterFIFOAssignment = CAN_RX_FIFO_USED;
+  filter.FilterActivation = ENABLE;
 
-	// Use mask mode (ID & Mask comparison)
-	rxFilterConfig.FilterMode = CAN_FILTERMODE_IDMASK;
-
-	// Use 32-bit scale for one full extended ID filter
-	rxFilterConfig.FilterScale = CAN_FILTERSCALE_32BIT;
-
-	// Assign accepted messages to FIFO0
-	rxFilterConfig.FilterFIFOAssignment = CAN_FILTER_FIFO0;
-
-	// Enable the filter
-	rxFilterConfig.FilterActivation = CAN_FILTER_ENABLE;
-
-	/*
-	* Extended (29-bit) ID filters are left-shifted by 3 bits.
-	* Also, the IDE bit (bit 2) must be set to 1 to indicate extended IDs.
-	*
-	* Base ID:  0x300
-	* Mask:     0x7C0 (ignore lower 6 bits)
-	* Accepts all EXT IDs from 0x300 to 0x33F.
-	*/
-
-	// Set the base extended ID
-	uint32_t baseId = (0x300 << 3) | (1 << 2); // include IDE=1
-	uint32_t maskId = (0x7C0 << 3) | (1 << 2); // mask for extended IDs only
-
-	rxFilterConfig.FilterIdHigh = (baseId >> 16) & 0xFFFF;
-	rxFilterConfig.FilterIdLow  = baseId & 0xFFFF;
-	rxFilterConfig.FilterMaskIdHigh = (maskId >> 16) & 0xFFFF;
-	rxFilterConfig.FilterMaskIdLow  = maskId & 0xFFFF;
-
-	// Apply the filter
-	if (HAL_CAN_ConfigFilter(&hcan, &rxFilterConfig) != HAL_OK)
-	{
-		// Configuration Error
-		Error_Handler();
-	}
+  if (HAL_CAN_ConfigFilter(&hcan, &filter) != HAL_OK) {
+    return HAL_ERROR;
+  }
 
   /* USER CODE END CAN_Init 2 */
 
@@ -789,7 +770,7 @@ void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *hcan) {
 	CAN_RxHeaderTypeDef RxHeader;
 	uint8_t RxData[8] = {0};
 
-	if (HAL_CAN_GetRxMessage(hcan, CAN_RX_FIFO0, &RxHeader, RxData) != HAL_OK) {
+	if (HAL_CAN_GetRxMessage(hcan, CAN_RX_FIFO_USED, &RxHeader, RxData) != HAL_OK) {
 		// Reception Error
 		return;
 	}
