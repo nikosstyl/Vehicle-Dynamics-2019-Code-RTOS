@@ -11,15 +11,18 @@ vd_cog:
   canbus_id_2: 0x31
   canbus_id_3: 0x32
   canbus_id_4: 0x33
+  canbus_rcv_addr: 0x300
   is_cog: 1
   cmake_build_type: RelWithDebInfo # Used to identify the CMake build type for each board config.
 
 vd_front:
   canbus_id_1: 0x34
   canbus_id_2: 0x35
+  canbus_rcv_addr: 0x301
   cmake_build_type: RelWithDebInfo
 
 vd_rear:
   canbus_id_1: 0x36
   canbus_id_2: 0x37
+  canbus_rcv_addr: 0x302
   cmake_build_type: RelWithDebInfo

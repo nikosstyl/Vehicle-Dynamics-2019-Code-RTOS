@@ -16,4 +16,6 @@
 #define CANBUS_ID_4 @CANBUS_ID_4@
 #endif
 
+#define CANBUS_RCV_ADDR @CANBUS_RCV_ADDR@
+
 #endif

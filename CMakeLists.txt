@@ -84,6 +84,8 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     # Add user sources here
 	Core/Inc/asm330lhh_reg.h
 	Core/Src/asm330lhh_reg.c
+	Core/Src/flash_utils.c
+	Core/Inc/flash_utils.h
 )
 
 # Add include paths

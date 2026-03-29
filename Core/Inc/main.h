@@ -49,14 +49,7 @@ typedef union{
 	uint8_t u8[16];
 }ADC_Samples_t;
 
-typedef struct _canBusConfig {
-	int16_t multiplier;
-	int16_t divider;
-	int16_t offset;
-	uint8_t index;
-}canBusConfig_t;
-
-enum POSITION_INDEX {
+typedef enum _POSITION_INDEX {
 	POS_ADC_CHANNEL_1 = 0,
 	POS_ADC_CHANNEL_2,
 	POS_ADC_CHANNEL_3,
@@ -70,8 +63,15 @@ enum POSITION_INDEX {
 	POS_IMU_ACCEL_Z,
 	POS_IMU_GYRO_X,
 	POS_IMU_GYRO_Y,
-	POS_IMU_GYRO_Z
-};
+	POS_IMU_GYRO_Z,
+	TOTAL_POSITIONS
+} POSITION_INDEX;
+
+typedef struct _canBusConfig {
+	float alpha;
+	uint8_t permanently_stored;
+	POSITION_INDEX signal_to_smooth;
+}canBusConfig_t;
 
 /* USER CODE END ET */
 
@@ -106,6 +106,10 @@ int ItmPrintf(const char *format, ...);
 #define ADC_CHANNELS_NUM 8
 #define IMU_CHANNELS_NUM 6
 #define TOTAL_CHANNELS_NUM (ADC_CHANNELS_NUM + IMU_CHANNELS_NUM)
+
+#define DEFAULT_FILTER_ALPHA 0.1f
+
+#define FLASH_DATA_ADDR 0x0800F800 // Max 2kb, the address for storing user data, check the linker script
 
 /* USER CODE END Private defines */
 

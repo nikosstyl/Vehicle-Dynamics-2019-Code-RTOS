@@ -28,6 +28,7 @@
 #include "config.h"
 #include "string.h"
 #include "stdarg.h"
+#include "flash_utils.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -124,9 +125,9 @@ void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *hcan);
 void ADC_swap(ADC_Samples_t *ret);
 
 /* Function that sends data over CAN Bus CORRECTLY */
-HAL_StatusTypeDef Send_CAN_Msg(uint32_t id, uint32_t dlc, uint8_t aData[8]);
+HAL_StatusTypeDef Send_CAN_Msg(uint32_t id, uint32_t dlc, uint8_t* aData);
 
-void SimpleFilter(ADC_Samples_t *values, float *extAlpha);
+void SimpleFilter(ADC_Samples_t *values, axis3bit16_t *accel, axis3bit16_t *gyro);
 
 /* USER CODE END PV */
 
@@ -163,8 +164,12 @@ CAN_TxHeaderTypeDef TxHeader;	/* CAN Header */
 uint32_t mailbox;				/* CAN Bus mailbox */
 ADC_Samples_t ADC_Samples={0}, Final_ADC_Values={0};		/* ADC Data */
 
-static const canBusConfig_t defaultDataParamConfig = {.multiplier=1, .divider=1, .offset=0};
-canBusConfig_t dataParamConfig[TOTAL_CHANNELS_NUM];
+static const canBusConfig_t defaultAlphaConfig = {.alpha = DEFAULT_FILTER_ALPHA, .signal_to_smooth=POS_ADC_CHANNEL_1};
+
+// This is a simple float array that holds all the alpha configurations.
+// They are read from the memory during startup (toDo) or get set by CAN Bus
+// Maybe a reset to the memory contents would be nice? Idk let's see.
+float alphaConfigs[TOTAL_POSITIONS]; 
 
 /* USER CODE END 0 */
 
@@ -246,6 +251,16 @@ int main(void)
 	if (HAL_CAN_ActivateNotification(&hcan, CAN_IT_TX_MAILBOX_EMPTY) != HAL_OK) {
 		Error_Handler();
 	}
+
+  // Read the alpha configs during bootup
+  float tmpConfigs[TOTAL_POSITIONS] = {0};
+  Flash_Read(FLASH_DATA_ADDR, tmpConfigs, sizeof(tmpConfigs));
+  for (POSITION_INDEX i=0;i<TOTAL_POSITIONS;i++) {
+    if (tmpConfigs[i] == 0) {
+      tmpConfigs[i] = DEFAULT_FILTER_ALPHA;
+    }
+  }
+  memcpy(alphaConfigs, tmpConfigs, sizeof(alphaConfigs));
   /* USER CODE END 2 */
 
   /* Init scheduler */
@@ -717,19 +732,24 @@ void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc) {
 }
 
 void ADC_swap(ADC_Samples_t *ret) {
-	ret->i16[0] = Final_ADC_Values.i16[0];
-	ret->i16[1] = Final_ADC_Values.i16[2];
-	ret->i16[2] = Final_ADC_Values.i16[1];
-	ret->i16[3] = Final_ADC_Values.i16[3];
-	ret->i16[4] = Final_ADC_Values.i16[5];
-	ret->i16[5] = Final_ADC_Values.i16[7];
-	ret->i16[6] = Final_ADC_Values.i16[4];
-	ret->i16[7] = Final_ADC_Values.i16[6];
+	ret->i16[POS_ADC_CHANNEL_1] = Final_ADC_Values.i16[POS_ADC_CHANNEL_1];
+	ret->i16[POS_ADC_CHANNEL_2] = Final_ADC_Values.i16[POS_ADC_CHANNEL_3];
+	ret->i16[POS_ADC_CHANNEL_3] = Final_ADC_Values.i16[POS_ADC_CHANNEL_2];
+	ret->i16[POS_ADC_CHANNEL_4] = Final_ADC_Values.i16[POS_ADC_CHANNEL_4];
+	ret->i16[POS_ADC_CHANNEL_5] = Final_ADC_Values.i16[POS_ADC_CHANNEL_6];
+	ret->i16[POS_ADC_CHANNEL_6] = Final_ADC_Values.i16[POS_ADC_CHANNEL_8];
+	ret->i16[POS_ADC_CHANNEL_7] = Final_ADC_Values.i16[POS_ADC_CHANNEL_5];
+	ret->i16[POS_ADC_CHANNEL_8] = Final_ADC_Values.i16[POS_ADC_CHANNEL_7];
 }
 
-HAL_StatusTypeDef Send_CAN_Msg(uint32_t id, uint32_t dlc, uint8_t aData[8]) {
+HAL_StatusTypeDef Send_CAN_Msg(uint32_t id, uint32_t dlc, uint8_t* aData) {
 	HAL_StatusTypeDef status;
-	TxHeader.ExtId = id;
+	
+  if (dlc > 8) { // MAX bytes a single can msg can send once.
+    return HAL_ERROR;
+  }
+  
+  TxHeader.ExtId = id;
 	TxHeader.DLC = dlc;
 	TxHeader.IDE = CAN_ID_EXT;
 	TxHeader.RTR = CAN_RTR_DATA;
@@ -774,28 +794,56 @@ void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *hcan) {
 		return;
 	}
 
-	if (RxHeader.ExtId < 0x300 || RxHeader.ExtId > 0x321) {
-		// ID out of range, ignore
+	if (RxHeader.ExtId != CANBUS_RCV_ADDR) {
+		// msg not targeting our board, abort.
 		return;
 	}
 
+  if (RxHeader.DLC != 3) {
+    // We want to read just 2 params
+    return;
+  }
+
 	canBusConfig_t param = {0};
-	param.multiplier = (int16_t)(RxData[0] | (RxData[1] << 8));
-	param.divider = (int16_t)(RxData[2] | (RxData[3] << 8));
-	param.offset = (int16_t)(RxData[4] | (RxData[5] << 8));
-	param.index = (uint8_t)(RxHeader.ExtId - 0x300);
+	param.signal_to_smooth    = RxData[0]; // Number ranging from 0 to TOTAL_POSITIONS - 1
+  param.alpha               = (float)RxData[1]; // Must convert this to 0...1 value in the proper task.
+  param.permanently_stored  = RxData[2]; // 1 to permanently store this alpha configuration
+  
+  if (param.signal_to_smooth >= TOTAL_POSITIONS) {
+    return;
+  }
 
 	// timeout must be 0, we're in ISR context
 	osMessageQueuePut(rxParamQueueHandle, &param, 0, 0);
 }
 
-void SimpleFilter(ADC_Samples_t *values, float *extAlpha) {
-	for (uint8_t i = 0; i < 8; i++) {
-		static float filtered[8] = {0};
-		const float alpha = extAlpha ? *extAlpha : 0.1f;
-		filtered[i] += alpha * ((float)values->i16[i] - filtered[i]);
+void SimpleFilter(ADC_Samples_t *values, axis3bit16_t *accel, axis3bit16_t *gyro) {
+  static float filtered[TOTAL_POSITIONS];
+  static bool first_run = true;
+
+  if (first_run) { // Set to zero on first run
+    first_run = false;
+    memset(filtered, 0, sizeof(filtered));
+  }
+
+  // alphaConfigs is a global variable set by an RTOS task. It is not set frequently,
+  // thus guarding this variable is not required.
+  // (it's a good practice to do though, I'm just lazy)
+	for (POSITION_INDEX i = POS_ADC_CHANNEL_1; i <= POS_ADC_CHANNEL_8; i++) {
+		filtered[i] += alphaConfigs[i] * ((float)values->i16[i] - filtered[i]);
 		values->i16[i] = (int16_t)filtered[i];
 	}
+
+  for (POSITION_INDEX i = POS_IMU_ACCEL_X, j=0; i<= POS_IMU_ACCEL_Z; i++,j++) {
+    filtered[i] += alphaConfigs[i] * ((float)accel->i16[j] - filtered[i]);
+    accel->i16[j] = (int16_t) filtered[i];
+  }
+
+  for (POSITION_INDEX i = POS_IMU_GYRO_X, j=0; i<= POS_IMU_GYRO_Z; i++,j++) {
+    filtered[i] += alphaConfigs[i] * ((float)gyro->i16[j] - filtered[i]);
+    gyro->i16[j] = (int16_t) filtered[i];
+  }
+
 }
 
 /*
@@ -842,9 +890,11 @@ void initializeIMU(stmdev_ctx_t *dev_ctx) {
 }
 
 void readFromIMU(stmdev_ctx_t *dev_ctx, axis3bit16_t *accel, axis3bit16_t *gyro) {
-	uint8_t reg;
-	asm330lhh_xl_flag_data_ready_get(dev_ctx, &reg);
-	if (!reg) {
+	uint8_t availableData = 0;
+  for (int i=0; i<5 && availableData==0; i++) { // Try to get data 5 times
+	  asm330lhh_xl_flag_data_ready_get(dev_ctx, &availableData); // returns 0 for no error
+  }
+	if (!availableData) {
 		return;
 	}
 	asm330lhh_acceleration_raw_get(dev_ctx, accel->i16);
@@ -911,21 +961,20 @@ void mainTask(void *argument)
 		osSemaphoreAcquire(adcDataSemaphoreHandle, pdMS_TO_TICKS(5));
 		Final_ADC_Values = ADC_Samples; // Buffer the ADC values during safe read
 		ADC_swap(&values);
-		SimpleFilter(&values, NULL);
-
+    
 		#if IS_COG==0
-		applyUserCalibration(&values, NULL, NULL);
-
+    SimpleFilter(&values, NULL, NULL);
+    
 		Send_CAN_Msg(CANBUS_ID_1, 8, &values.u8[0]); // Sends ADC data vol1
 		Send_CAN_Msg(CANBUS_ID_2, 8, &values.u8[8]); // Sends ADC data vol2
     #elif IS_COG==1
 		axis3bit16_t accel, gyro;
 		readFromIMU(&dev_ctx, &accel, &gyro);
+    
+    SimpleFilter(&values, &accel, &gyro);
 
-		applyUserCalibration(&values, &accel, &gyro);
-
-		Send_CAN_Msg(CANBUS_ID_1, 8, &accel.u8[0]); // Sends accel data
-		Send_CAN_Msg(CANBUS_ID_2, 8, &gyro.u8[0]); // Sends gyro data
+    Send_CAN_Msg(CANBUS_ID_1, 6, &accel.u8[0]); // Sends accel data
+		Send_CAN_Msg(CANBUS_ID_2, 6, &gyro.u8[0]); // Sends gyro data
 		Send_CAN_Msg(CANBUS_ID_3, 8, &values.u8[0]); // Sends ADC data vol1
 		Send_CAN_Msg(CANBUS_ID_4, 8, &values.u8[8]); // Sends ADC data vol2
 		#endif
@@ -947,11 +996,17 @@ void setParametersTask(void *argument)
   /* USER CODE BEGIN setParametersTask */
   /* Infinite loop */
 	while (1) {
-		canBusConfig_t rxParam = defaultDataParamConfig;
+		canBusConfig_t rxParam = defaultAlphaConfig;
 		osMessageQueueGet(rxParamQueueHandle, &rxParam, NULL, osWaitForever);
-		if (rxParam.index < TOTAL_CHANNELS_NUM && rxParam.divider != 0) {
-			dataParamConfig[rxParam.index] = rxParam;
-		}
+		
+    rxParam.alpha = rxParam.alpha / 255.0f; // Converting this to 0...1 number
+    alphaConfigs[rxParam.signal_to_smooth] = rxParam.alpha;
+    
+    if (rxParam.permanently_stored) {
+      float tmpConfigs[TOTAL_POSITIONS];
+      memcpy(tmpConfigs, alphaConfigs, sizeof(tmpConfigs));
+      Flash_Write(FLASH_DATA_ADDR, tmpConfigs, sizeof(tmpConfigs));
+    }
 	}
   /* USER CODE END setParametersTask */
 }
