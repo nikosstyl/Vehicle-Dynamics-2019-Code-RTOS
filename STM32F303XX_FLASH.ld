@@ -55,9 +55,10 @@ ENTRY(Reset_Handler)
 /* Specify the memory areas */
 MEMORY
 {
-RAM (xrw)      : ORIGIN = 0x20000000, LENGTH = 12K
-CCMRAM (xrw)      : ORIGIN = 0x10000000, LENGTH = 4K
-FLASH (rx)      : ORIGIN = 0x8000000, LENGTH = 64K
+  RAM (xrw)      : ORIGIN = 0x20000000, LENGTH = 12K
+  CCMRAM (xrw)      : ORIGIN = 0x10000000, LENGTH = 4K
+  FLASH (rx)      : ORIGIN = 0x8000000, LENGTH = 64K
+  DATA_FLASH (r)  : ORIGIN = 0x0800F800, LENGTH = 2K
 }
 
 /* Highest address of the user mode stack */
