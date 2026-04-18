@@ -802,6 +802,10 @@ void SimpleFilter(ADC_Samples_t *values, axis3bit16_t *accel, axis3bit16_t *gyro
   static float filtered[TOTAL_POSITIONS];
   static bool first_run = true;
 
+  if (!accel || !gyro) {
+    return;
+  }
+
   if (first_run) { // Set to zero on first run
     first_run = false;
     memset(filtered, 0, sizeof(filtered));
