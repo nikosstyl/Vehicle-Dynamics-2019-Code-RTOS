@@ -3564,7 +3564,7 @@ int32_t asm330lhh_ff_dur_set(stmdev_ctx_t *ctx, uint8_t val)
 int32_t asm330lhh_ff_dur_get(stmdev_ctx_t *ctx, uint8_t *val)
 {
   asm330lhh_wake_up_dur_t wake_up_dur;
-  asm330lhh_free_fall_t free_fall;
+  asm330lhh_free_fall_t free_fall = {0};
   int32_t ret;
 
   ret = asm330lhh_read_reg(ctx, ASM330LHH_WAKE_UP_DUR,
@@ -3638,8 +3638,8 @@ int32_t asm330lhh_fifo_watermark_set(stmdev_ctx_t *ctx, uint16_t val)
   */
 int32_t asm330lhh_fifo_watermark_get(stmdev_ctx_t *ctx, uint16_t *val)
 {
-  asm330lhh_fifo_ctrl1_t fifo_ctrl1;
-  asm330lhh_fifo_ctrl2_t fifo_ctrl2;
+  asm330lhh_fifo_ctrl1_t fifo_ctrl1 = {0};
+  asm330lhh_fifo_ctrl2_t fifo_ctrl2 = {0};
   int32_t ret;
 
   ret = asm330lhh_read_reg(ctx, ASM330LHH_FIFO_CTRL2,
@@ -4351,8 +4351,8 @@ int32_t asm330lhh_batch_counter_threshold_set(stmdev_ctx_t *ctx,
 int32_t asm330lhh_batch_counter_threshold_get(stmdev_ctx_t *ctx,
                                               uint16_t *val)
 {
-  asm330lhh_counter_bdr_reg1_t counter_bdr_reg1;
-  asm330lhh_counter_bdr_reg2_t counter_bdr_reg2;
+  asm330lhh_counter_bdr_reg1_t counter_bdr_reg1 = {0};
+  asm330lhh_counter_bdr_reg2_t counter_bdr_reg2 = {0};
   int32_t ret;
 
   ret = asm330lhh_read_reg(ctx, ASM330LHH_COUNTER_BDR_REG1,
