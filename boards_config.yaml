@@ -4,7 +4,7 @@
 # The goal of this .yaml file is for a user to add quickly and easily 
 # different defined values for multiple board configurations (e.g. front/cog/rear)
 
-FIRMWARE_VERSION: v0.5.3
+FIRMWARE_VERSION: v0.5.4
 
 vd_cog:
   canbus_id_1: 0x30
