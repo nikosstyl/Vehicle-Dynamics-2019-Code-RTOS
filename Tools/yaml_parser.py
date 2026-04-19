@@ -1,14 +1,20 @@
-import yaml, sys, pathlib, argparse
+import yaml
+import pathlib
+import argparse
 
 FW_VERSION_KEY = "FIRMWARE_VERSION"
 
-def main(yaml_file:str, which_board:str, env_file:str, print_cgf:bool):
+def main(yaml_file:str, which_board:str, env_file:str, print_cgf:bool, print_fw:bool):
     yaml_file = pathlib.Path(yaml_file).resolve().as_posix()
 
     env_contents = []
 
     with open(yaml_file, "r") as stream:
         config = yaml.safe_load(stream)
+
+        if print_fw:
+            print(config[FW_VERSION_KEY])
+            exit(0)
 
         if print_cgf:
             boards = [key for key in config.keys() if key != FW_VERSION_KEY]
@@ -42,18 +48,20 @@ if __name__ == "__main__":
     parser.add_argument('-b', "--board", metavar="Board" ,help="Desired board for config generation.")
     parser.add_argument('-o', "--output_file", metavar="Output File", help="Specify the output generated .env file.")
     parser.add_argument("-p", "--print_configs", action="store_true", help="Print all the available board configurations and return.")
+    parser.add_argument("--fw_version", action="store_true", help="Print the firmware version and exit.")
     
     args = parser.parse_args()
     yaml_file = args.file
     which_board = args.board
     env_file = args.output_file
     print_configs = args.print_configs
+    print_fw_ver = args.fw_version
 
     if yaml_file is None:
         parser.print_help()
 
-    if print_configs == False and (which_board is None or env_file is None):
+    if not print_configs and (which_board is None or env_file is None) and not print_fw_ver:
         parser.print_help()
         exit(1)
 
-    main(yaml_file, which_board, env_file, print_configs)
+    main(yaml_file, which_board, env_file, print_configs, print_fw_ver)
