@@ -608,7 +608,7 @@ static void MX_CAN_Init(void)
   filter.FilterActivation = ENABLE;
 
   if (HAL_CAN_ConfigFilter(&hcan, &filter) != HAL_OK) {
-    return HAL_ERROR;
+    return;
   }
 
   /* USER CODE END CAN_Init 2 */
